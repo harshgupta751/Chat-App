@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { Send, Users, Wifi, WifiOff, MessageCircle, Hash, Moon, Sun } from 'lucide-react';
 
+
 function App() {
 const [username, setUsername] =useState("")
 const [roomId,setRoomId] = useState("")
@@ -17,7 +18,7 @@ const roomRef=useRef()
 const usernameRef=useRef(username)
 
 useEffect(()=>{
-const socket= new WebSocket('ws://localhost:8080')
+const socket= new WebSocket(import.meta.env.VITE_WEBSOCKET_URL)
 setwsocket(socket)
 socket.onopen=()=>{
   setconnected(true)
