@@ -1,6 +1,7 @@
 import {WebSocketServer} from 'ws'
-
-const socketsServer= new WebSocketServer({port:8080})
+import dotenv from 'dotenv'
+dotenv.config()
+const socketsServer= new WebSocketServer({port:process.env.PORT})
 
 const allConnected = []
 
