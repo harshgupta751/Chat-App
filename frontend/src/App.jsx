@@ -250,15 +250,18 @@ setMessage("")
               )}
             </div>
           </div>
+         <div className={`mt-4 text-center text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+  Created by <span className="font-semibold">Harsh Gupta</span>
+</div>
         </div>
       </div>
     );
   }
 
   return (
-    <div className={`min-h-screen ${darkMode ? 'bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900' : 'bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50'} flex flex-col`}>
+    <div className={`h-screen flex flex-col ${darkMode ? 'bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900' : 'bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50'}`}>
       {/* Header */}
-      <div className={`${darkMode ? 'bg-gray-800/80' : 'bg-white/80'} backdrop-blur-sm border-b ${darkMode ? 'border-gray-700/20' : 'border-white/20'} px-6 py-4`}>
+      <div className={`fixed top-0 w-full z-50 ${darkMode ? 'bg-gray-800/80' : 'bg-white/80'} backdrop-blur-sm border-b ${darkMode ? 'border-gray-700/20' : 'border-white/20'} px-6 py-4`}>
         <div className="flex items-center justify-between">
           <div className="flex items-center space-x-3">
             <div className="bg-gradient-to-r from-blue-500 to-purple-600 rounded-full w-10 h-10 flex items-center justify-center">
@@ -304,7 +307,7 @@ setMessage("")
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-4">
+      <div className="flex-1 overflow-y-auto p-6 space-y-4 mt-[88px] mb-[96px]">
         {messages.length === 0 ? (
           <div className="text-center py-12">
             <MessageCircle className={`w-16 h-16 ${darkMode ? 'text-gray-600' : 'text-gray-300'} mx-auto mb-4`} />
@@ -341,7 +344,7 @@ setMessage("")
       </div>
 
       {/* Message Input */}
-      <div className={`${darkMode ? 'bg-gray-800/80' : 'bg-white/80'} backdrop-blur-sm border-t ${darkMode ? 'border-gray-700/20' : 'border-white/20'} p-6`}>
+      <div className={`fixed bottom-0 w-full z-50 ${darkMode ? 'bg-gray-800/80' : 'bg-white/80'} backdrop-blur-sm border-t ${darkMode ? 'border-gray-700/20' : 'border-white/20'} p-6`}>
         <div className="flex items-center space-x-4">
           <div className="flex-1 relative">
             <input
