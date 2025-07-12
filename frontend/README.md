@@ -34,5 +34,4 @@ A full-stack real-time chat application built using **React** on the frontend an
 
 ### 1️⃣ Clone the repository
 ```bash
-git clone https://github.com/your-username/chat-app.git
-cd chat-app
+git clone https://github.com/harshgupta751/Chat-App.git
