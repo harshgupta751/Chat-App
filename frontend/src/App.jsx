@@ -111,7 +111,7 @@ if(ws && ws.readyState===WebSocket.OPEN){
 
 
 function handleKeyPress(e){
-if(e.key=='Enter' && message){
+if(e.key=='Enter' && message && connected){
 sendMessage()
 }
 
