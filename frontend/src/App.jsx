@@ -217,7 +217,7 @@ setMessage("")
                   value={roomId}
                   onChange={(e) => setRoomId(e.target.value)}
                   onKeyDown={(e)=>{
-                    if(e.key=='Enter' && username && roomId){
+                    if(e.key=='Enter' && username && roomId && connected){
                       joinRoom()
                     }
                   }}
@@ -229,7 +229,7 @@ setMessage("")
 
             <button
               onClick={joinRoom}
-              disabled={!roomId.trim() || !username.trim()}
+              disabled={!roomId.trim() || !username.trim() || !connected}
               className="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white py-3 rounded-xl font-semibold hover:from-blue-600 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105"
             >
               Join Room
@@ -308,7 +308,7 @@ setMessage("")
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-4 mt-[88px] mb-[96px]">
+      <div className="flex-1 overflow-y-auto p-6 space-y-4 mt-[120px] sm:mt-[88px] mb-[96px]">
         {messages.length === 0 ? (
           <div className="text-center py-12">
             <MessageCircle className={`w-16 h-16 ${darkMode ? 'text-gray-600' : 'text-gray-300'} mx-auto mb-4`} />
