@@ -3,6 +3,7 @@ import { Send, Users, Wifi, WifiOff, MessageCircle, Hash, Moon, Sun, Smile, Imag
 import EmojiPicker from 'emoji-picker-react'
 import {v4 as uuidv4} from 'uuid'
 
+
 function App() {
 const [username, setUsername] =useState("")
 const [roomId,setRoomId] = useState("")
@@ -18,6 +19,8 @@ const roomRef=useRef()
 const usernameRef=useRef(username)
 const [showEmojiPicker, setShowEmojiPicker] = useState(false)
 const emojiPickerRef= useRef()
+const [zoomImage, setZoomImage] = useState(null)
+const [imageUploading, setImageUploading] = useState(false)
 
 useEffect(()=>{
 const socket= new WebSocket(import.meta.env.VITE_WEBSOCKET_URL)
@@ -71,6 +74,7 @@ setMessages((prev)=>[...prev,{
     timestamp: new Date(parsed.timestamp)
 
   }])
+  setImageUploading(false)
 
 }
 }
@@ -126,6 +130,19 @@ return function(){
 },[])
 
 
+function wrapEmojis(text) {
+  return text.replace(
+    /(\p{Emoji_Presentation}|\p{Emoji}\uFE0F|\p{Extended_Pictographic})/gu,
+    (emoji) => `<span class="emoji">${emoji}</span>`
+  );
+}
+
+useEffect(()=>{
+return function(){
+  setImageUploading(false)
+}
+
+},[])
 
 
 
@@ -194,6 +211,7 @@ function handleImageUpload(e) {
   e.target.value=null
 
   const reader = new FileReader();
+  setImageUploading(true)
   reader.onloadend = () => {
     const base64Image = reader.result;
 
@@ -203,6 +221,7 @@ function handleImageUpload(e) {
         image: base64Image
       },
     }));
+
   };
   reader.readAsDataURL(file);
 }
@@ -382,13 +401,31 @@ function handleImageUpload(e) {
                   <p className={`text-xs font-medium mb-1 opacity-70`}>{msg.sender}</p>
                 )}
 
-                {msg.image && (
-  <img src={msg.image} alt="Sent" className="mt-2 max-w-xs rounded-xl border" />
+{msg.image && (
+  <div className="mt-2">
+    <img
+      src={msg.image}
+      alt="Sent"
+      className="max-w-xs sm:max-w-sm md:max-w-md rounded-xl border cursor-zoom-in hover:opacity-90 transition"
+      onClick={() => setZoomImage(msg.image)}
+    />
+  </div>
 )}
 
-      {msg.text && (<p className={`leading-relaxed break-words ${/^[\p{Emoji}\s]+$/u.test(msg.text) ? 'text-2xl' : 'text-base'}`}>
-  {msg.text}
-</p>)}
+
+{msg.text && (
+  <p
+    className={`leading-relaxed break-words ${
+      /^[\p{Emoji}\s]+$/u.test(msg.text) ? 'text-3xl' : 'emoji-size-fix'
+    }`}
+    dangerouslySetInnerHTML={{
+      __html: /^[\p{Emoji}\s]+$/u.test(msg.text)
+        ? msg.text
+        : wrapEmojis(msg.text),
+    }}
+  />
+)}
+
 
 
                 <p className={`text-xs mt-1 ${msg.isOwn ? 'text-white/70' : darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
@@ -398,6 +435,27 @@ function handleImageUpload(e) {
             </div>
           ))
         )}
+{imageUploading && (
+  <div className="fixed bottom-[100px] left-1/2 transform -translate-x-1/2 bg-black/80 text-white px-4 py-2 rounded-xl shadow-lg z-[999] flex items-center space-x-2">
+    <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
+      <circle
+        className="opacity-25"
+        cx="12"
+        cy="12"
+        r="10"
+        stroke="currentColor"
+        strokeWidth="4"
+        fill="none"
+      />
+      <path
+        className="opacity-75"
+        fill="currentColor"
+        d="M4 12a8 8 0 018-8v8H4z"
+      />
+    </svg>
+    <span className="text-sm">Sending image...</span>
+  </div>
+)}
         <div ref={messagesEndRef} />
       </div>
 
@@ -457,6 +515,26 @@ function handleImageUpload(e) {
           </div>
         </div>
       </div>
+      {zoomImage && (
+  <div
+    className="fixed inset-0 bg-black/80 flex items-center justify-center z-[999]"
+    onClick={()=> setZoomImage(null)}
+  >
+    <img
+      src={zoomImage}
+      alt="Zoomed"
+      className="max-h-[90vh] max-w-[90vw] rounded-xl shadow-2xl"
+      onClick={(e) => e.stopPropagation()} 
+    />
+    <button
+      onClick={()=> setZoomImage(null)}
+      className="absolute top-4 right-4 text-white text-3xl bg-black/50 hover:bg-black/80 px-4 py-2 rounded-full"
+    >
+      &times;
+    </button>
+  </div>
+)}
+
     </div>
   );
 }

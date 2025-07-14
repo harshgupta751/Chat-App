@@ -35,3 +35,12 @@
 ::-webkit-scrollbar-thumb:hover {
   background: #a8a8a8;
 }
+
+.emoji-size-fix {
+  font-size: 1rem;
+}
+
+.emoji-size-fix span.emoji {
+  font-size: 1.3em;
+  vertical-align: middle;
+}
