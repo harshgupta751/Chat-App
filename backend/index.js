@@ -10,25 +10,31 @@ socketsServer.on('connection', function(socket){
     socket.onmessage= (e)=>{
        const msg= JSON.parse(e.data)
        if(msg.type=="join"){
+
+        const index= allConnected.findIndex((ele)=> ele.socket==socket)
+        if(index!=-1){
+            allConnected.splice(index,1)
+        }
+
             allConnected.push({
                 socket: socket,
-                RoomId: msg.payload.RoomId,
+                roomId: msg.payload.roomId,
                 username: msg.payload.username
             })
 
-            const currentSocket=allConnected.find((ele)=>ele.socket==socket)
+         const currentSocket=allConnected.find((ele)=>ele.socket==socket)
             let currentRoomId=null
             if(currentSocket){
-                currentRoomId=currentSocket.RoomId
+                currentRoomId=currentSocket.roomId
             }
                 let usersCount=0;
             for(let i=0;i<allConnected.length;i++){
-                if(allConnected[i].RoomId==currentRoomId){
+                if(allConnected[i].roomId==currentRoomId){
                     usersCount++;
                 }
             }
                  for(let i=0;i<allConnected.length;i++){
-                if(allConnected[i].RoomId==currentRoomId){
+                if(allConnected[i].roomId==currentRoomId){
                     allConnected[i].socket.send(JSON.stringify({
                         sender: 'System',
                         message: 'join',
@@ -47,15 +53,16 @@ socketsServer.on('connection', function(socket){
         let currentRoomId=null
         let senderUsername=null
         if(currentSocket){
-       currentRoomId= currentSocket.RoomId
+       currentRoomId= currentSocket.roomId
        senderUsername=currentSocket.username
         }
 
         for(let i=0;i<allConnected.length;i++){
-            if(allConnected[i].RoomId==currentRoomId){
+            if(allConnected[i].roomId==currentRoomId){
               allConnected[i].socket.send(JSON.stringify({
                 sender: senderUsername,
                 text: msg.payload.message,
+                image: msg.payload.image,
                 timestamp: new Date()
               }))
             }
@@ -69,13 +76,13 @@ socketsServer.on('connection', function(socket){
        const currentRoomId=msg.payload.roomId
                 let usersCount=0;
             for(let i=0;i<allConnected.length;i++){
-                if(allConnected[i].RoomId==currentRoomId){
+                if(allConnected[i].roomId==currentRoomId){
                     usersCount++;
                 }
             }
 
              for(let i=0;i<allConnected.length;i++){
-                if(allConnected[i].RoomId==currentRoomId){
+                if(allConnected[i].roomId==currentRoomId){
                     allConnected[i].socket.send(JSON.stringify({
                         sender: 'System',
                         message: 'leave',
@@ -100,19 +107,19 @@ socketsServer.on('connection', function(socket){
        
            let currentRoomId=null
             if(currentSocket){
-                currentRoomId=currentSocket.RoomId
+                currentRoomId=currentSocket.roomId
             }
       if(currentRoomId){
                 let usersCount=0;
             for(let i=0;i<allConnected.length;i++){
-                if(allConnected[i].RoomId==currentRoomId){
+                if(allConnected[i].roomId==currentRoomId){
                     usersCount++;
                 }
             }
         
 
              for(let i=0;i<allConnected.length;i++){
-                if(allConnected[i].RoomId==currentRoomId){
+                if(allConnected[i].roomId==currentRoomId){
                     allConnected[i].socket.send(JSON.stringify({
                         sender: 'System',
                         message: 'leave',

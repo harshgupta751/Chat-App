@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
-import { Send, Users, Wifi, WifiOff, MessageCircle, Hash, Moon, Sun } from 'lucide-react';
-
+import { Send, Users, Wifi, WifiOff, MessageCircle, Hash, Moon, Sun, Smile, ImageIcon} from 'lucide-react';
+import EmojiPicker from 'emoji-picker-react'
+import {v4 as uuidv4} from 'uuid'
 
 function App() {
 const [username, setUsername] =useState("")
@@ -13,9 +14,10 @@ const messagesEndRef= useRef()
 const [message, setMessage]= useState("")
 const [ws,setwsocket]= useState()
 const [darkMode, setDarkMode]= useState(true)
-const idCount=useRef(1)
 const roomRef=useRef()
 const usernameRef=useRef(username)
+const [showEmojiPicker, setShowEmojiPicker] = useState(false)
+const emojiPickerRef= useRef()
 
 useEffect(()=>{
 const socket= new WebSocket(import.meta.env.VITE_WEBSOCKET_URL)
@@ -23,34 +25,35 @@ setwsocket(socket)
 socket.onopen=()=>{
   setconnected(true)
 }
+// socket.onclose= ()=>{
+//   setconnected(false)
+// }
+
 
 socket.onmessage=(e)=>{
   const parsed=JSON.parse(e.data)
-
 if(parsed.sender=="System"){
  setUsersCount(parsed.usersCount)
 
  if(parsed.message=='join' && parsed.username!=usernameRef.current){
 setMessages((prev)=>[...prev,{
-  id: idCount.current,
+  id: uuidv4(),
   isOwn: false,
   sender: 'System',
   text: `${parsed.username} has joined the room`,
   timestamp: new Date(parsed.timestamp)
 }])
-idCount.current= idCount.current + 1
 
  }
 
 if(parsed.message=='leave' && parsed.username!=usernameRef.current){
 setMessages((prev)=>[...prev,{
-  id: idCount.current,
+  id: uuidv4(),
   isOwn: false,
   sender: 'System',
   text: `${parsed.username} has left the room`,
   timestamp: new Date(parsed.timestamp)
 }])
-idCount.current= idCount.current + 1
 
 
 }
@@ -60,14 +63,14 @@ idCount.current= idCount.current + 1
 }else{
 
   setMessages((prev)=>[...prev,{
-    id: idCount.current,
+    id: uuidv4(),
     isOwn: parsed.sender==usernameRef.current,
     sender: parsed.sender,
     text: parsed.text,
+    image: parsed.image,
     timestamp: new Date(parsed.timestamp)
 
   }])
-  idCount.current=idCount.current + 1
 
 }
 }
@@ -106,6 +109,23 @@ if(ws && ws.readyState===WebSocket.OPEN){
 },[ws])
 
 
+useEffect(()=>{
+function handleOutsideClick(event){
+if(emojiPickerRef.current && !emojiPickerRef.current.contains(event.target)){
+  setShowEmojiPicker(false)
+}
+
+}
+
+document.addEventListener("mousedown",handleOutsideClick)
+
+return function(){
+  document.removeEventListener("mousedown",handleOutsideClick)
+}
+
+},[])
+
+
 
 
 
@@ -128,7 +148,7 @@ function joinRoom(){
 ws.send(JSON.stringify({
 type: "join",
 payload: {
-  RoomId: roomId,
+  roomId: roomId,
   username: username
 }
 }))
@@ -162,6 +182,34 @@ ws.send(JSON.stringify({
 setMessage("")
 
 }
+
+
+function onEmojiClick(emojiData, event){
+setMessage((prev)=>prev + emojiData.emoji)
+}
+
+function handleImageUpload(e) {
+  const file = e.target.files[0];
+  if (!file || !connected) return;
+  e.target.value=null
+
+  const reader = new FileReader();
+  reader.onloadend = () => {
+    const base64Image = reader.result;
+
+    ws.send(JSON.stringify({
+      type: 'chat',
+      payload: {
+        image: base64Image
+      },
+    }));
+  };
+  reader.readAsDataURL(file);
+}
+
+
+
+
 
 
 
@@ -333,7 +381,16 @@ setMessage("")
                 {!msg.isOwn && msg.sender !== 'System' && (
                   <p className={`text-xs font-medium mb-1 opacity-70`}>{msg.sender}</p>
                 )}
-                <p className="text-sm leading-relaxed">{msg.text}</p>
+
+                {msg.image && (
+  <img src={msg.image} alt="Sent" className="mt-2 max-w-xs rounded-xl border" />
+)}
+
+      {msg.text && (<p className={`leading-relaxed break-words ${/^[\p{Emoji}\s]+$/u.test(msg.text) ? 'text-2xl' : 'text-base'}`}>
+  {msg.text}
+</p>)}
+
+
                 <p className={`text-xs mt-1 ${msg.isOwn ? 'text-white/70' : darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
                   {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                 </p>
@@ -348,14 +405,48 @@ setMessage("")
       <div className={`fixed bottom-0 w-full z-50 ${darkMode ? 'bg-gray-800/80' : 'bg-white/80'} backdrop-blur-sm border-t ${darkMode ? 'border-gray-700/20' : 'border-white/20'} p-6`}>
         <div className="flex items-center space-x-4">
           <div className="flex-1 relative">
+                      <div ref={emojiPickerRef}>
+            <button
+    type="button"
+    className="absolute left-4 top-1/2 -translate-y-1/2 z-10"
+    onClick={() => setShowEmojiPicker((prev) => !prev)}
+  >
+    <Smile className="w-5 h-5 text-yellow-500" />
+  </button>
+
+  {showEmojiPicker && (
+    <div className="absolute bottom-14 left-0 z-50">
+      <EmojiPicker
+        onEmojiClick={onEmojiClick}
+        theme={darkMode ? 'dark' : 'light'}
+      />
+    </div>
+  )}
+  </div>
+  <input
+  type="file"
+  accept="image/*"
+  onChange={handleImageUpload}
+  className="hidden"
+  id="image-upload"
+/>
+<label htmlFor="image-upload" className="cursor-pointer absolute left-12 top-1/2 -translate-y-1/2 z-10">
+  <ImageIcon className="w-5 h-5 text-pink-400 hover:scale-110 transition-transform" />
+</label>
+
             <input
               type="text"
               value={message}
               onChange={(e) => setMessage(e.target.value)}
               onKeyDown={handleKeyPress}
               placeholder="Type your message..."
-              className={`w-full px-4 py-3 pr-12 border ${darkMode ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400' : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500'} rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all duration-200`}
+              className={`w-full pl-20 pr-12 py-3 border ${
+    darkMode
+      ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400'
+      : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500'
+  } rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all duration-200`}
             />
+  
             <button
               onClick={sendMessage}
               disabled={!message.trim() || !connected}
