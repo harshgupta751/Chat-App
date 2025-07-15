@@ -193,7 +193,9 @@ function sendMessage(){
 ws.send(JSON.stringify({
   type: 'chat',
   payload: {
-    message: message
+    message: message,
+    roomId: roomId,
+    username:username
   }
 }))
 setMessage("")
@@ -218,7 +220,9 @@ function handleImageUpload(e) {
     ws.send(JSON.stringify({
       type: 'chat',
       payload: {
-        image: base64Image
+        image: base64Image,
+        roomId: roomId,
+        username: username
       },
     }));
 

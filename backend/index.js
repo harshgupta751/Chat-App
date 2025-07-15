@@ -22,11 +22,8 @@ socketsServer.on('connection', function(socket){
                 username: msg.payload.username
             })
 
-         const currentSocket=allConnected.find((ele)=>ele.socket==socket)
-            let currentRoomId=null
-            if(currentSocket){
-                currentRoomId=currentSocket.roomId
-            }
+             const currentRoomId=msg.payload.roomId
+            
                 let usersCount=0;
             for(let i=0;i<allConnected.length;i++){
                 if(allConnected[i].roomId==currentRoomId){
@@ -47,20 +44,13 @@ socketsServer.on('connection', function(socket){
 
        }
        if(msg.type=="chat"){
-        const currentSocket= allConnected.find((ele)=>{
-            return ele.socket==socket
-        })
-        let currentRoomId=null
-        let senderUsername=null
-        if(currentSocket){
-       currentRoomId= currentSocket.roomId
-       senderUsername=currentSocket.username
-        }
+
+    const currentRoomId= msg.payload.roomId
 
         for(let i=0;i<allConnected.length;i++){
             if(allConnected[i].roomId==currentRoomId){
               allConnected[i].socket.send(JSON.stringify({
-                sender: senderUsername,
+                sender: msg.payload.username,
                 text: msg.payload.message,
                 image: msg.payload.image,
                 timestamp: new Date()
@@ -131,10 +121,7 @@ socketsServer.on('connection', function(socket){
             }
         }
 
-
-
     }
-
 
 
 })
