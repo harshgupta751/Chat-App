@@ -13,6 +13,10 @@ A full-stack real-time chat application built using **React** on the frontend an
 - ⚡ System messages on join/leave events
 - 🎨 Smooth and responsive UI using Tailwind CSS
 - 📜 Auto-scroll to latest message
+- 😄 Emoji picker integration
+- 📷 Upload and send images in chat
+- 🔍 Click to zoom image view
+- 🔄 Loader shown while image is uploading
 
 ---
 
