@@ -28,9 +28,6 @@ setwsocket(socket)
 socket.onopen=()=>{
   setconnected(true)
 }
-// socket.onclose= ()=>{
-//   setconnected(false)
-// }
 
 
 socket.onmessage=(e)=>{
