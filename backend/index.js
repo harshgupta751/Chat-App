@@ -20,7 +20,8 @@ socketsServer.on('connection', function(socket){
             allConnected.push({
                 socket: socket,
                 roomId: msg.payload.roomId,
-                username: msg.payload.username
+                username: msg.payload.username,
+                sessionId: socket.sessionId 
             })
 
              const currentRoomId=msg.payload.roomId
@@ -53,12 +54,13 @@ socketsServer.on('connection', function(socket){
        if(msg.type=="chat"){
 
     const currentRoomId= msg.payload.roomId
+    const senderEntry = allConnected.find((ele) => ele.socket == socket)
 
         for(let i=0;i<allConnected.length;i++){
             if(allConnected[i].roomId==currentRoomId){
               allConnected[i].socket.send(JSON.stringify({
                 sender: msg.payload.username,
-                sessionId: socket.sessionId,
+                sessionId: senderEntry.sessionId,
                 text: msg.payload.message,
                 image: msg.payload.image,
                 timestamp: new Date()
