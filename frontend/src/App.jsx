@@ -46,9 +46,7 @@ if(parsed.sender=="System"){
  setUsersCount(parsed.usersCount)
 
  if(parsed.message=='join' && parsed.username!=usernameRef.current){
-    console.log("parsed.sessionId:", parsed.sessionId)
-  console.log("mySessionIdRef.current:", mySessionIdRef.current)
-  console.log("isOwn:", parsed.sessionId === mySessionIdRef.current)
+
 setMessages((prev)=>[...prev,{
   id: uuidv4(),
   isOwn: false,

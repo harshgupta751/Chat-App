@@ -55,8 +55,7 @@ socketsServer.on('connection', function(socket){
 
     const currentRoomId= msg.payload.roomId
     const senderEntry = allConnected.find((ele) => ele.socket == socket)
-  console.log("senderEntry.sessionId:", senderEntry?.sessionId)
-  console.log("socket.sessionId:", socket.sessionId)
+
         for(let i=0;i<allConnected.length;i++){
             if(allConnected[i].roomId==currentRoomId){
               allConnected[i].socket.send(JSON.stringify({
