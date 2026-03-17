@@ -8,6 +8,7 @@ const allConnected = []
 
 socketsServer.on('connection', function(socket){
   socket.sessionId = uuidv4()
+    console.log("🔌 New connection, sessionId:", socket.sessionId)
     socket.onmessage= (e)=>{
        const msg= JSON.parse(e.data)
        if(msg.type=="join"){
@@ -32,11 +33,13 @@ socketsServer.on('connection', function(socket){
                     usersCount++;
                 }
             }
-
+console.log("👤 Join:", msg.payload.username, "sessionId:", socket.sessionId)
   socket.send(JSON.stringify({
     type: 'session',
     sessionId: socket.sessionId
   }))
+
+   console.log("📤 Session sent:", socket.sessionId)
 
                  for(let i=0;i<allConnected.length;i++){
                 if(allConnected[i].roomId==currentRoomId){
@@ -55,7 +58,9 @@ socketsServer.on('connection', function(socket){
 
     const currentRoomId= msg.payload.roomId
     const senderEntry = allConnected.find((ele) => ele.socket == socket)
-
+      console.log("💬 Chat from:", msg.payload.username)
+      console.log("senderEntry?.sessionId:", senderEntry?.sessionId)
+      console.log("socket.sessionId:", socket.sessionId)
         for(let i=0;i<allConnected.length;i++){
             if(allConnected[i].roomId==currentRoomId){
               allConnected[i].socket.send(JSON.stringify({
