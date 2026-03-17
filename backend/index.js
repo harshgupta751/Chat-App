@@ -1,4 +1,5 @@
 import {WebSocketServer} from 'ws'
+import { v4 as uuidv4 } from 'uuid'
 import dotenv from 'dotenv'
 dotenv.config()
 const socketsServer= new WebSocketServer({port:process.env.PORT})
@@ -6,7 +7,7 @@ const socketsServer= new WebSocketServer({port:process.env.PORT})
 const allConnected = []
 
 socketsServer.on('connection', function(socket){
-
+  socket.sessionId = uuidv4()
     socket.onmessage= (e)=>{
        const msg= JSON.parse(e.data)
        if(msg.type=="join"){
@@ -30,6 +31,12 @@ socketsServer.on('connection', function(socket){
                     usersCount++;
                 }
             }
+
+  socket.send(JSON.stringify({
+    type: 'session',
+    sessionId: socket.sessionId
+  }))
+
                  for(let i=0;i<allConnected.length;i++){
                 if(allConnected[i].roomId==currentRoomId){
                     allConnected[i].socket.send(JSON.stringify({
@@ -51,6 +58,7 @@ socketsServer.on('connection', function(socket){
             if(allConnected[i].roomId==currentRoomId){
               allConnected[i].socket.send(JSON.stringify({
                 sender: msg.payload.username,
+                sessionId: socket.sessionId,
                 text: msg.payload.message,
                 image: msg.payload.image,
                 timestamp: new Date()

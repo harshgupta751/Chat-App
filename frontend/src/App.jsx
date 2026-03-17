@@ -17,10 +17,13 @@ const [ws,setwsocket]= useState()
 const [darkMode, setDarkMode]= useState(true)
 const roomRef=useRef()
 const usernameRef=useRef(username)
+const [mySessionId, setMySessionId] = useState(null)
+const mySessionIdRef = useRef(null)
 const [showEmojiPicker, setShowEmojiPicker] = useState(false)
 const emojiPickerRef= useRef()
 const [zoomImage, setZoomImage] = useState(null)
 const [imageUploading, setImageUploading] = useState(false)
+
 
 useEffect(()=>{
 const socket= new WebSocket(import.meta.env.VITE_WEBSOCKET_URL)
@@ -32,6 +35,13 @@ socket.onopen=()=>{
 
 socket.onmessage=(e)=>{
   const parsed=JSON.parse(e.data)
+
+  if (parsed.type === 'session') {
+    mySessionIdRef.current = parsed.sessionId
+    setMySessionId(parsed.sessionId)
+    return
+  }
+
 if(parsed.sender=="System"){
  setUsersCount(parsed.usersCount)
 
@@ -64,7 +74,7 @@ setMessages((prev)=>[...prev,{
 
   setMessages((prev)=>[...prev,{
     id: uuidv4(),
-    isOwn: parsed.sender==usernameRef.current,
+    isOwn: parsed.sessionId === mySessionIdRef.current,
     sender: parsed.sender,
     text: parsed.text,
     image: parsed.image,
