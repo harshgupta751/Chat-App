@@ -37,15 +37,11 @@ socket.onmessage=(e)=>{
   const parsed=JSON.parse(e.data)
 
   if (parsed.type === 'session') {
-      console.log("✅ SESSION RECEIVED:", parsed.sessionId)
     mySessionIdRef.current = parsed.sessionId
     setMySessionId(parsed.sessionId)
     return
   }
-console.log("📨 Message received:")
-console.log("parsed.sessionId:", parsed.sessionId)
-console.log("mySessionIdRef.current:", mySessionIdRef.current)
-console.log("isOwn:", parsed.sessionId === mySessionIdRef.current)
+
 if(parsed.sender=="System"){
  setUsersCount(parsed.usersCount)
 
