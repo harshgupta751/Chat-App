@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { Send, Users, Wifi, WifiOff, MessageCircle, Hash, Moon, Sun, Smile, ImageIcon} from 'lucide-react';
 import EmojiPicker from 'emoji-picker-react'
 import {v4 as uuidv4} from 'uuid'
+import { nanoid } from 'nanoid'
 
 
 function App() {
@@ -23,6 +24,8 @@ const [showEmojiPicker, setShowEmojiPicker] = useState(false)
 const emojiPickerRef= useRef()
 const [zoomImage, setZoomImage] = useState(null)
 const [imageUploading, setImageUploading] = useState(false)
+const [showJoinExisting, setShowJoinExisting] = useState(false)
+const [copied, setCopied] = useState(false)
 
 
 useEffect(()=>{
@@ -168,16 +171,29 @@ setDarkMode(!darkMode)
 }
 
 
-function joinRoom(){
+// joinRoom ko replace karo in dono se:
 
-ws.send(JSON.stringify({
-type: "join",
-payload: {
-  roomId: roomId,
-  username: username
+function createRoom() {
+  const generatedRoomId = nanoid(10)
+  setRoomId(generatedRoomId)
+  ws.send(JSON.stringify({
+    type: "join",
+    payload: {
+      roomId: generatedRoomId,
+      username: username
+    }
+  }))
+  setJoined(true)
 }
-}))
 
+function joinExistingRoom() {
+  ws.send(JSON.stringify({
+    type: "join",
+    payload: {
+      roomId: roomId,
+      username: username
+    }
+  }))
   setJoined(true)
 }
 
@@ -211,6 +227,12 @@ setMessage("")
 }
 
 
+function copyRoomId() {
+  navigator.clipboard.writeText(roomId)
+  setCopied(true)
+  setTimeout(() => setCopied(false), 2000)
+}
+
 function onEmojiClick(emojiData, event){
 setMessage((prev)=>prev + emojiData.emoji)
 }
@@ -239,104 +261,115 @@ function handleImageUpload(e) {
 }
 
 
+if (!joined) {
+  return (
+    <div className={`min-h-screen ${darkMode ? 'bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900' : 'bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50'} flex items-center justify-center p-4`}>
+      <div className={`${darkMode ? 'bg-gray-800/80' : 'bg-white/80'} backdrop-blur-sm rounded-3xl shadow-2xl p-8 w-full max-w-md border ${darkMode ? 'border-gray-700/20' : 'border-white/20'}`}>
+        
+        <div className="absolute top-4 right-4">
+          <button onClick={toggleDarkMode} className={`p-2 rounded-full ${darkMode ? 'bg-gray-700 text-yellow-400 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'} transition-all duration-200`}>
+            {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+          </button>
+        </div>
 
-
-
-
-
-
-  if (!joined) {
-    return (
-      <div className={`min-h-screen ${darkMode ? 'bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900' : 'bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50'} flex items-center justify-center p-4`}>
-        <div className={`${darkMode ? 'bg-gray-800/80' : 'bg-white/80'} backdrop-blur-sm rounded-3xl shadow-2xl p-8 w-full max-w-md border ${darkMode ? 'border-gray-700/20' : 'border-white/20'}`}>
-          <div className="absolute top-4 right-4">
-            <button
-              onClick={toggleDarkMode}
-              className={`p-2 rounded-full ${darkMode ? 'bg-gray-700 text-yellow-400 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'} transition-all duration-200`}
-            >
-              {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-            </button>
+        <div className="text-center mb-8">
+          <div className="bg-gradient-to-r from-blue-500 to-purple-600 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
+            <MessageCircle className="w-8 h-8 text-white" />
           </div>
-          <div className="text-center mb-8">
-            <div className="bg-gradient-to-r from-blue-500 to-purple-600 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
-              <MessageCircle className="w-8 h-8 text-white" />
-            </div>
-            <h1 className={`text-3xl font-bold ${darkMode ? 'text-white' : 'text-gray-800'} mb-2`}>Join Chat Room</h1>
-            <p className={`${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Enter your details to start chatting</p>
+          <h1 className={`text-3xl font-bold ${darkMode ? 'text-white' : 'text-gray-800'} mb-2`}>
+            {showJoinExisting ? 'Join a Room' : 'Start Chatting'}
+          </h1>
+          <p className={`${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
+            {showJoinExisting ? 'Enter Room ID to join' : 'Create a new room instantly'}
+          </p>
+        </div>
+
+        <div className="space-y-4">
+          {/* Username — hamesha dikhega */}
+          <div>
+            <label className={`block text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'} mb-2`}>Your Name</label>
+            <input
+              type="text"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="Enter your name"
+              className={`w-full px-4 py-3 border ${darkMode ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400' : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500'} rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all duration-200`}
+            />
           </div>
 
-          <div className="space-y-6">
+          {/* Room ID — sirf join existing mein */}
+          {showJoinExisting && (
             <div>
-              <label className={`block text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'} mb-2`}>
-                Your Name
-              </label>
-              <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                onKeyDown={(e)=>{
-                    if(e.key=='Enter' && username){
-                      roomRef.current.focus()
-                    }
-                }}
-                placeholder="Enter your name"
-                className={`w-full px-4 py-3 border ${darkMode ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400' : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500'} rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all duration-200`}
-              />
-            </div>
-
-            <div>
-              <label className={`block text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'} mb-2`}>
-                Room ID
-              </label>
+              <label className={`block text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'} mb-2`}>Room ID</label>
               <div className="relative">
                 <Hash className={`absolute left-3 top-1/2 transform -translate-y-1/2 ${darkMode ? 'text-gray-500' : 'text-gray-400'} w-5 h-5`} />
                 <input
                   type="text"
-                  ref={roomRef}
                   value={roomId}
                   onChange={(e) => setRoomId(e.target.value)}
-                  onKeyDown={(e)=>{
-                    if(e.key=='Enter' && username && roomId && connected){
-                      joinRoom()
-                    }
-                  }}
-                  placeholder="Enter room ID"
+                  onKeyDown={(e) => { if(e.key=='Enter' && username && roomId && connected) joinExistingRoom() }}
+                  placeholder="Paste Room ID here"
                   className={`w-full pl-10 pr-4 py-3 border ${darkMode ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400' : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500'} rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all duration-200`}
                 />
               </div>
             </div>
+          )}
 
-            <button
-              onClick={joinRoom}
-              disabled={!roomId.trim() || !username.trim() || !connected}
-              className="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white py-3 rounded-xl font-semibold hover:from-blue-600 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105"
-            >
-              Join Room
-            </button>
-          </div>
+          {/* Buttons */}
+          {!showJoinExisting ? (
+            <>
+              <button
+                onClick={createRoom}
+                disabled={!username.trim() || !connected}
+                className="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white py-3 rounded-xl font-semibold hover:from-blue-600 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105"
+              >
+                Create New Room
+              </button>
+              <button
+                onClick={() => { setShowJoinExisting(true); setRoomId("") }}
+                disabled={!username.trim() || !connected}
+                className={`w-full py-3 rounded-xl font-semibold border transition-all duration-200 ${darkMode ? 'border-gray-600 text-gray-300 hover:bg-gray-700' : 'border-gray-300 text-gray-700 hover:bg-gray-50'} disabled:opacity-50 disabled:cursor-not-allowed`}
+              >
+                Join Existing Room
+              </button>
+            </>
+          ) : (
+            <>
+              <button
+                onClick={joinExistingRoom}
+                disabled={!roomId.trim() || !username.trim() || !connected}
+                className="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white py-3 rounded-xl font-semibold hover:from-blue-600 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105"
+              >
+                Join Room
+              </button>
+              <button
+                onClick={() => { setShowJoinExisting(false); setRoomId("") }}
+                className={`w-full py-3 rounded-xl font-semibold border transition-all duration-200 ${darkMode ? 'border-gray-600 text-gray-300 hover:bg-gray-700' : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}
+              >
+                ← Back
+              </button>
+            </>
+          )}
+        </div>
 
-          <div className={`mt-6 text-center text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-            <div className="flex items-center justify-center space-x-2">
-              {connected ? (
-                <>
-                  <Wifi className="w-4 h-4 text-green-500" />
-                  <span className="text-green-600">Connected</span>
-                </>
-              ) : (
-                <>
-                  <WifiOff className="w-4 h-4 text-red-500" />
-                  <span className="text-red-600">Disconnected</span>
-                </>
-              )}
-            </div>
+        {/* Connection status */}
+        <div className={`mt-6 text-center text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+          <div className="flex items-center justify-center space-x-2">
+            {connected ? (
+              <><Wifi className="w-4 h-4 text-green-500" /><span className="text-green-600">Connected</span></>
+            ) : (
+              <><WifiOff className="w-4 h-4 text-red-500" /><span className="text-red-600">Disconnected</span></>
+            )}
           </div>
-         <div className={`mt-4 text-center text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-  Created by <span className="font-semibold">Harsh Gupta</span>
-</div>
+        </div>
+        <div className={`mt-4 text-center text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+          Created by <span className="font-semibold">Harsh Gupta</span>
         </div>
       </div>
-    );
-  }
+    </div>
+  )
+}
+
 
   return (
     <div className={`h-screen flex flex-col ${darkMode ? 'bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900' : 'bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50'}`}>
@@ -347,10 +380,18 @@ function handleImageUpload(e) {
             <div className="bg-gradient-to-r from-blue-500 to-purple-600 rounded-full w-10 h-10 flex items-center justify-center">
               <MessageCircle className="w-5 h-5 text-white" />
             </div>
-            <div>
-              <h1 className={`text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-800'}`}>Room #{roomId}</h1>
-              <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Welcome, {username}</p>
-            </div>
+ <div>
+  <div className="flex items-center space-x-2">
+    <h1 className={`text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-800'}`}>Room #{roomId}</h1>
+    <button
+      onClick={copyRoomId}
+      className={`text-xs px-2 py-1 rounded-lg transition-all ${darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
+    >
+      {copied ? '✅ Copied!' : '📋 Copy ID'}
+    </button>
+  </div>
+  <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Welcome, {username}</p>
+</div>
           </div>
           <div className="flex items-center space-x-4">
             <div className="flex items-center space-x-2">
