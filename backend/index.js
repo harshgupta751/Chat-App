@@ -1,8 +1,20 @@
 import {WebSocketServer} from 'ws'
 import { v4 as uuidv4 } from 'uuid'
+import express from 'express'
+import http from 'http'
 import dotenv from 'dotenv'
 dotenv.config()
-const socketsServer= new WebSocketServer({port:process.env.PORT})
+
+
+const app = express()
+const server = http.createServer(app)
+
+// 👇 Health check endpoint
+app.get('/health', (req, res) => {
+  res.status(200).json({ status: 'ok' })
+})
+
+const socketsServer= new WebSocketServer({server})
 
 const allConnected = []
 
@@ -135,6 +147,8 @@ socketsServer.on('connection', function(socket){
 
     }
 
-
 })
 
+server.listen(process.env.PORT, () => {
+  console.log(`Server running on port ${process.env.PORT}`)
+})
