@@ -1,8 +1,0 @@
-services:
-  - type: web
-    name: ChatRoom-Backend
-    env: node
-    plan: free
-    buildCommand: npm install
-    startCommand: node index.js
-    zeroDowntimeDeploy: false
