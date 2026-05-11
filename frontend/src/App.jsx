@@ -1,595 +1,515 @@
 import { useEffect, useRef, useState } from 'react'
-import { Send, Users, Wifi, WifiOff, MessageCircle, Hash, Moon, Sun, Smile, ImageIcon} from 'lucide-react';
+import {
+  Send, Users, Wifi, WifiOff, Moon, Sun,
+  Smile, ImageIcon, LogOut, Copy, Check, ArrowLeft, Hash
+} from 'lucide-react'
 import EmojiPicker from 'emoji-picker-react'
-import {v4 as uuidv4} from 'uuid'
+import { v4 as uuidv4 } from 'uuid'
 import { nanoid } from 'nanoid'
 
+/* ============================================================
+   All state + logic is identical to the original.
+   Only the JSX / className layer has been redesigned.
+   ============================================================ */
 
 function App() {
-const [username, setUsername] =useState("")
-const [roomId,setRoomId] = useState("")
-const [connected, setconnected] = useState(false)
-const [joined, setJoined]= useState(false)
-const [usersCount, setUsersCount] = useState(0)
-const [messages, setMessages] = useState([])
-const messagesEndRef= useRef()
-const [message, setMessage]= useState("")
-const [ws,setwsocket]= useState()
-const [darkMode, setDarkMode]= useState(true)
-const roomRef=useRef()
-const usernameRef=useRef(username)
-const [mySessionId, setMySessionId] = useState(null)
-const mySessionIdRef = useRef(null)
-const [showEmojiPicker, setShowEmojiPicker] = useState(false)
-const emojiPickerRef= useRef()
-const [zoomImage, setZoomImage] = useState(null)
-const [imageUploading, setImageUploading] = useState(false)
-const [showJoinExisting, setShowJoinExisting] = useState(false)
-const [copied, setCopied] = useState(false)
+  const [username, setUsername]         = useState("")
+  const [roomId, setRoomId]             = useState("")
+  const [connected, setconnected]       = useState(false)
+  const [joined, setJoined]             = useState(false)
+  const [usersCount, setUsersCount]     = useState(0)
+  const [messages, setMessages]         = useState([])
+  const messagesEndRef                  = useRef()
+  const [message, setMessage]           = useState("")
+  const [ws, setwsocket]                = useState()
+  const [darkMode, setDarkMode]         = useState(true)
+  const usernameRef                     = useRef(username)
+  const [mySessionId, setMySessionId]   = useState(null)
+  const mySessionIdRef                  = useRef(null)
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false)
+  const emojiPickerRef                  = useRef()
+  const [zoomImage, setZoomImage]       = useState(null)
+  const [imageUploading, setImageUploading] = useState(false)
+  const [showJoinExisting, setShowJoinExisting] = useState(false)
+  const [copied, setCopied]             = useState(false)
 
+  // ── WebSocket bootstrap ─────────────────────────────────
+  useEffect(() => {
+    const socket = new WebSocket(import.meta.env.VITE_WEBSOCKET_URL)
+    setwsocket(socket)
 
-useEffect(()=>{
-const socket= new WebSocket(import.meta.env.VITE_WEBSOCKET_URL)
-setwsocket(socket)
-socket.onopen=()=>{
-  setconnected(true)
-}
+    socket.onopen = () => { setconnected(true) }
 
+    socket.onmessage = (e) => {
+      const parsed = JSON.parse(e.data)
 
-socket.onmessage=(e)=>{
-  const parsed=JSON.parse(e.data)
+      if (parsed.type === 'session') {
+        mySessionIdRef.current = parsed.sessionId
+        setMySessionId(parsed.sessionId)
+        return
+      }
 
-  if (parsed.type === 'session') {
-    mySessionIdRef.current = parsed.sessionId
-    setMySessionId(parsed.sessionId)
-    return
+      if (parsed.sender === "System") {
+        setUsersCount(parsed.usersCount)
+        if (parsed.message === 'join' && parsed.username !== usernameRef.current) {
+          setMessages(prev => [...prev, {
+            id: uuidv4(), isOwn: false, sender: 'System',
+            text: `${parsed.username} joined the room`,
+            timestamp: new Date(parsed.timestamp)
+          }])
+        }
+        if (parsed.message === 'leave' && parsed.username !== usernameRef.current) {
+          setMessages(prev => [...prev, {
+            id: uuidv4(), isOwn: false, sender: 'System',
+            text: `${parsed.username} left the room`,
+            timestamp: new Date(parsed.timestamp)
+          }])
+        }
+      } else {
+        setMessages(prev => [...prev, {
+          id: uuidv4(),
+          isOwn: parsed.sessionId === mySessionIdRef.current,
+          sender: parsed.sender,
+          text: parsed.text,
+          image: parsed.image,
+          timestamp: new Date(parsed.timestamp)
+        }])
+        setImageUploading(false)
+      }
+    }
+
+    return () => { if (connected) socket.close() }
+  }, [])
+
+  // ── Auto-scroll ─────────────────────────────────────────
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+  }, [messages])
+
+  // ── Username ref sync ───────────────────────────────────
+  useEffect(() => { usernameRef.current = username }, [username])
+
+  // ── WS cleanup ──────────────────────────────────────────
+  useEffect(() => {
+    return () => { if (ws && ws.readyState === WebSocket.OPEN) ws.close() }
+  }, [ws])
+
+  // ── Emoji picker outside-click ──────────────────────────
+  useEffect(() => {
+    const handleOutside = (e) => {
+      if (emojiPickerRef.current && !emojiPickerRef.current.contains(e.target)) {
+        setShowEmojiPicker(false)
+      }
+    }
+    document.addEventListener("mousedown", handleOutside)
+    return () => document.removeEventListener("mousedown", handleOutside)
+  }, [])
+
+  useEffect(() => () => setImageUploading(false), [])
+
+  // ── Helpers ─────────────────────────────────────────────
+  function wrapEmojis(text) {
+    return text.replace(
+      /(\p{Emoji_Presentation}|\p{Emoji}\uFE0F|\p{Extended_Pictographic})/gu,
+      emoji => `<span class="emoji">${emoji}</span>`
+    )
   }
 
-if(parsed.sender=="System"){
- setUsersCount(parsed.usersCount)
-
- if(parsed.message=='join' && parsed.username!=usernameRef.current){
-
-setMessages((prev)=>[...prev,{
-  id: uuidv4(),
-  isOwn: false,
-  sender: 'System',
-  text: `${parsed.username} has joined the room`,
-  timestamp: new Date(parsed.timestamp)
-}])
-
- }
-
-if(parsed.message=='leave' && parsed.username!=usernameRef.current){
-setMessages((prev)=>[...prev,{
-  id: uuidv4(),
-  isOwn: false,
-  sender: 'System',
-  text: `${parsed.username} has left the room`,
-  timestamp: new Date(parsed.timestamp)
-}])
-
-
-}
-
-
-
-}else{
-
-  setMessages((prev)=>[...prev,{
-    id: uuidv4(),
-    isOwn: parsed.sessionId === mySessionIdRef.current,
-    sender: parsed.sender,
-    text: parsed.text,
-    image: parsed.image,
-    timestamp: new Date(parsed.timestamp)
-
-  }])
-  setImageUploading(false)
-
-}
-}
-
-return function(){
-
-  if(connected){
-   socket.close()
+  function handleKeyPress(e) {
+    if (e.key === 'Enter' && message && connected) sendMessage()
   }
-}
 
+  function toggleDarkMode() { setDarkMode(d => !d) }
 
-},[])
-
-
-useEffect(()=>{
-messagesEndRef.current?.scrollIntoView({behavior: 'smooth'})
-
-},[messages])
-
-useEffect(()=>{
-usernameRef.current=username
-
-},[username])
-
-useEffect(()=>{
-
-
-return function(){
-if(ws && ws.readyState===WebSocket.OPEN){
-  ws.close()
-}
-
-}
-
-},[ws])
-
-
-useEffect(()=>{
-function handleOutsideClick(event){
-if(emojiPickerRef.current && !emojiPickerRef.current.contains(event.target)){
-  setShowEmojiPicker(false)
-}
-
-}
-
-document.addEventListener("mousedown",handleOutsideClick)
-
-return function(){
-  document.removeEventListener("mousedown",handleOutsideClick)
-}
-
-},[])
-
-
-function wrapEmojis(text) {
-  return text.replace(
-    /(\p{Emoji_Presentation}|\p{Emoji}\uFE0F|\p{Extended_Pictographic})/gu,
-    (emoji) => `<span class="emoji">${emoji}</span>`
-  );
-}
-
-useEffect(()=>{
-return function(){
-  setImageUploading(false)
-}
-
-},[])
-
-
-
-
-function handleKeyPress(e){
-if(e.key=='Enter' && message && connected){
-sendMessage()
-}
-
-}
-
-function toggleDarkMode(){
-setDarkMode(!darkMode)
-
-}
-
-
-// joinRoom ko replace karo in dono se:
-
-function createRoom() {
-  const generatedRoomId = nanoid(10)
-  setRoomId(generatedRoomId)
-  ws.send(JSON.stringify({
-    type: "join",
-    payload: {
-      roomId: generatedRoomId,
-      username: username
-    }
-  }))
-  setJoined(true)
-}
-
-function joinExistingRoom() {
-  ws.send(JSON.stringify({
-    type: "join",
-    payload: {
-      roomId: roomId,
-      username: username
-    }
-  }))
-  setJoined(true)
-}
-
-function leaveRoom(){
-  if(ws && ws.readyState===WebSocket.OPEN){
-  ws.send(JSON.stringify({
-    type: "leave",
-    payload: {
-      roomId: roomId,
-      username: username
-    }
-  }))
-}
-setJoined(false)
-setUsername("")
-setRoomId("")
-setMessages([])
-}
-
-function sendMessage(){
-ws.send(JSON.stringify({
-  type: 'chat',
-  payload: {
-    message: message,
-    roomId: roomId,
-    username:username
+  // ── Room actions ────────────────────────────────────────
+  function createRoom() {
+    const id = nanoid(10)
+    setRoomId(id)
+    ws.send(JSON.stringify({ type: "join", payload: { roomId: id, username } }))
+    setJoined(true)
   }
-}))
-setMessage("")
 
-}
+  function joinExistingRoom() {
+    ws.send(JSON.stringify({ type: "join", payload: { roomId, username } }))
+    setJoined(true)
+  }
 
+  function leaveRoom() {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: "leave", payload: { roomId, username } }))
+    }
+    setJoined(false)
+    setUsername("")
+    setRoomId("")
+    setMessages([])
+  }
 
-function copyRoomId() {
-  navigator.clipboard.writeText(roomId)
-  setCopied(true)
-  setTimeout(() => setCopied(false), 2000)
-}
+  function sendMessage() {
+    ws.send(JSON.stringify({ type: 'chat', payload: { message, roomId, username } }))
+    setMessage("")
+  }
 
-function onEmojiClick(emojiData, event){
-setMessage((prev)=>prev + emojiData.emoji)
-}
+  function copyRoomId() {
+    navigator.clipboard.writeText(roomId)
+    setCopied(true)
+    setTimeout(() => setCopied(false), 2000)
+  }
 
-function handleImageUpload(e) {
-  const file = e.target.files[0];
-  if (!file || !connected) return;
-  e.target.value=null
+  function onEmojiClick(emojiData) {
+    setMessage(prev => prev + emojiData.emoji)
+  }
 
-  const reader = new FileReader();
-  setImageUploading(true)
-  reader.onloadend = () => {
-    const base64Image = reader.result;
+  function handleImageUpload(e) {
+    const file = e.target.files[0]
+    if (!file || !connected) return
+    e.target.value = null
+    setImageUploading(true)
+    const reader = new FileReader()
+    reader.onloadend = () => {
+      ws.send(JSON.stringify({
+        type: 'chat',
+        payload: { image: reader.result, roomId, username }
+      }))
+    }
+    reader.readAsDataURL(file)
+  }
 
-    ws.send(JSON.stringify({
-      type: 'chat',
-      payload: {
-        image: base64Image,
-        roomId: roomId,
-        username: username
-      },
-    }));
+  // ── Root class ───────────────────────────────────────────
+  const rootCls = `app-root${darkMode ? '' : ' light'}`
 
-  };
-  reader.readAsDataURL(file);
-}
+  // ============================================================
+  // JOIN SCREEN
+  // ============================================================
+  if (!joined) {
+    return (
+      <div className={rootCls}>
+        <div className="join-screen">
+          <div className="join-glow" />
 
-
-if (!joined) {
-  return (
-    <div className={`min-h-screen ${darkMode ? 'bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900' : 'bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50'} flex items-center justify-center p-4`}>
-      <div className={`${darkMode ? 'bg-gray-800/80' : 'bg-white/80'} backdrop-blur-sm rounded-3xl shadow-2xl p-8 w-full max-w-md border ${darkMode ? 'border-gray-700/20' : 'border-white/20'}`}>
-        
-        <div className="absolute top-4 right-4">
-          <button onClick={toggleDarkMode} className={`p-2 rounded-full ${darkMode ? 'bg-gray-700 text-yellow-400 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'} transition-all duration-200`}>
-            {darkMode ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
+          {/* Theme toggle */}
+          <button className="theme-toggle-fixed" onClick={toggleDarkMode} aria-label="Toggle theme">
+            {darkMode ? <Sun size={15} /> : <Moon size={15} />}
           </button>
-        </div>
 
-        <div className="text-center mb-8">
-          <div className="bg-gradient-to-r from-blue-500 to-purple-600 rounded-full w-16 h-16 flex items-center justify-center mx-auto mb-4">
-            <MessageCircle className="w-8 h-8 text-white" />
-          </div>
-          <h1 className={`text-3xl font-bold ${darkMode ? 'text-white' : 'text-gray-800'} mb-2`}>
-            {showJoinExisting ? 'Join a Room' : 'Start Chatting'}
-          </h1>
-          <p className={`${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>
-            {showJoinExisting ? 'Enter Room ID to join' : 'Create a new room instantly'}
-          </p>
-        </div>
+          <div className="join-card">
+            {/* Brand */}
+            <div className="join-brand">
+              <div className="join-logo-mark">E</div>
+              <div>
+                <div className="join-app-name">
+                  {showJoinExisting ? 'Join a Room' : 'Echo'}
+                </div>
+                <div className="join-tagline">
+                  {showJoinExisting
+                    ? 'Enter a room code to connect'
+                    : 'Private rooms. Real conversations.'}
+                </div>
+              </div>
+            </div>
 
-        <div className="space-y-4">
-          {/* Username — hamesha dikhega */}
-          <div>
-            <label className={`block text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'} mb-2`}>Your Name</label>
-            <input
-              type="text"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              placeholder="Enter your name"
-              className={`w-full px-4 py-3 border ${darkMode ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400' : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500'} rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all duration-200`}
-            />
-          </div>
+            <div className="join-sep" />
 
-          {/* Room ID — sirf join existing mein */}
-          {showJoinExisting && (
-            <div>
-              <label className={`block text-sm font-medium ${darkMode ? 'text-gray-300' : 'text-gray-700'} mb-2`}>Room ID</label>
-              <div className="relative">
-                <Hash className={`absolute left-3 top-1/2 transform -translate-y-1/2 ${darkMode ? 'text-gray-500' : 'text-gray-400'} w-5 h-5`} />
+            <div className="join-form">
+              {/* Name field — always visible */}
+              <div className="form-field">
+                <label className="form-label">Display name</label>
                 <input
                   type="text"
-                  value={roomId}
-                  onChange={(e) => setRoomId(e.target.value)}
-                  onKeyDown={(e) => { if(e.key=='Enter' && username && roomId && connected) joinExistingRoom() }}
-                  placeholder="Paste Room ID here"
-                  className={`w-full pl-10 pr-4 py-3 border ${darkMode ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400' : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500'} rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all duration-200`}
+                  value={username}
+                  onChange={e => setUsername(e.target.value)}
+                  placeholder="Who are you?"
+                  className="form-input"
                 />
               </div>
-            </div>
-          )}
 
-          {/* Buttons */}
-          {!showJoinExisting ? (
-            <>
-              <button
-                onClick={createRoom}
-                disabled={!username.trim() || !connected}
-                className="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white py-3 rounded-xl font-semibold hover:from-blue-600 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105"
-              >
-                Create New Room
-              </button>
-              <button
-                onClick={() => { setShowJoinExisting(true); setRoomId("") }}
-                disabled={!username.trim() || !connected}
-                className={`w-full py-3 rounded-xl font-semibold border transition-all duration-200 ${darkMode ? 'border-gray-600 text-gray-300 hover:bg-gray-700' : 'border-gray-300 text-gray-700 hover:bg-gray-50'} disabled:opacity-50 disabled:cursor-not-allowed`}
-              >
-                Join Existing Room
-              </button>
-            </>
-          ) : (
-            <>
-              <button
-                onClick={joinExistingRoom}
-                disabled={!roomId.trim() || !username.trim() || !connected}
-                className="w-full bg-gradient-to-r from-blue-500 to-purple-600 text-white py-3 rounded-xl font-semibold hover:from-blue-600 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105"
-              >
-                Join Room
-              </button>
-              <button
-                onClick={() => { setShowJoinExisting(false); setRoomId("") }}
-                className={`w-full py-3 rounded-xl font-semibold border transition-all duration-200 ${darkMode ? 'border-gray-600 text-gray-300 hover:bg-gray-700' : 'border-gray-300 text-gray-700 hover:bg-gray-50'}`}
-              >
-                ← Back
-              </button>
-            </>
-          )}
-        </div>
-
-        {/* Connection status */}
-        <div className={`mt-6 text-center text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-          <div className="flex items-center justify-center space-x-2">
-            {connected ? (
-              <><Wifi className="w-4 h-4 text-green-500" /><span className="text-green-600">Connected</span></>
-            ) : (
-              <><WifiOff className="w-4 h-4 text-red-500" /><span className="text-red-600">Disconnected</span></>
-            )}
-          </div>
-        </div>
-        <div className={`mt-4 text-center text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
-          Created by <span className="font-semibold">Harsh Gupta</span>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-
-  return (
-    <div className={`h-screen flex flex-col ${darkMode ? 'bg-gradient-to-br from-gray-900 via-gray-800 to-gray-900' : 'bg-gradient-to-br from-blue-50 via-indigo-50 to-purple-50'}`}>
-      {/* Header */}
-      <div className={`fixed top-0 w-full z-50 ${darkMode ? 'bg-gray-800/80' : 'bg-white/80'} backdrop-blur-sm border-b ${darkMode ? 'border-gray-700/20' : 'border-white/20'} px-6 py-4`}>
-        <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-3">
-            <div className="bg-gradient-to-r from-blue-500 to-purple-600 rounded-full w-10 h-10 flex items-center justify-center">
-              <MessageCircle className="w-5 h-5 text-white" />
-            </div>
- <div>
-  <div className="flex items-center space-x-2">
-    <h1 className={`text-xl font-bold ${darkMode ? 'text-white' : 'text-gray-800'}`}>Room #{roomId}</h1>
-    <button
-      onClick={copyRoomId}
-      className={`text-xs px-2 py-1 rounded-lg transition-all ${darkMode ? 'bg-gray-700 text-gray-300 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}
-    >
-      {copied ? '✅ Copied!' : '📋 Copy ID'}
-    </button>
-  </div>
-  <p className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>Welcome, {username}</p>
-</div>
-          </div>
-          <div className="flex items-center space-x-4">
-            <div className="flex items-center space-x-2">
-              <Users className={`w-4 h-4 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`} />
-              <span className={`text-sm ${darkMode ? 'text-gray-300' : 'text-gray-600'}`}>{usersCount-1} online</span>
-            </div>
-            <div className="flex items-center space-x-2">
-              {connected ? (
-                <>
-                  <Wifi className="w-4 h-4 text-green-500" />
-                  <span className="text-sm text-green-600">Connected</span>
-                </>
-              ) : (
-                <>
-                  <WifiOff className="w-4 h-4 text-red-500" />
-                  <span className="text-sm text-red-600">Disconnected</span>
-                </>
+              {/* Room ID — join existing only */}
+              {showJoinExisting && (
+                <div className="form-field">
+                  <label className="form-label">Room code</label>
+                  <div className="form-input-wrap">
+                    <span className="form-input-icon">
+                      <Hash size={13} />
+                    </span>
+                    <input
+                      type="text"
+                      value={roomId}
+                      onChange={e => setRoomId(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter' && username && roomId && connected) joinExistingRoom()
+                      }}
+                      placeholder="Paste room code here"
+                      className="form-input form-input--icon"
+                    />
+                  </div>
+                </div>
               )}
-            </div>
-            <button
-              onClick={toggleDarkMode}
-              className={`p-2 rounded-lg ${darkMode ? 'bg-gray-700 text-yellow-400 hover:bg-gray-600' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'} transition-all duration-200`}
-            >
-              {darkMode ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
-            </button>
-            <button
-              onClick={leaveRoom}
-              className={`text-sm text-red-600 hover:text-red-700 font-medium px-3 py-1 rounded-lg ${darkMode ? 'hover:bg-red-900/20' : 'hover:bg-red-50'} transition-colors`}
-            >
-              Leave Room
-            </button>
-          </div>
-        </div>
-      </div>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto p-6 space-y-4 mt-[120px] sm:mt-[88px] mb-[96px]">
-        {messages.length === 0 ? (
-          <div className="text-center py-12">
-            <MessageCircle className={`w-16 h-16 ${darkMode ? 'text-gray-600' : 'text-gray-300'} mx-auto mb-4`} />
-            <p className={`${darkMode ? 'text-gray-400' : 'text-gray-500'} text-lg`}>No messages yet</p>
-            <p className={`${darkMode ? 'text-gray-500' : 'text-gray-400'} text-sm`}>Start the conversation!</p>
-          </div>
-        ) : (
-          messages.map((msg) => (
-            <div
-              key={msg.id}
-              className={`flex ${msg.isOwn ? 'justify-end' : 'justify-start'} animate-fade-in-up`}
-            >
-              <div
-                className={`max-w-xs lg:max-w-md px-4 py-3 rounded-2xl shadow-sm ${
-                  msg.isOwn
-                    ? 'bg-gradient-to-r from-blue-500 to-purple-600 text-white'
-                    : msg.sender === 'System'
-                    ? `${darkMode ? 'bg-gray-700 text-gray-300 border border-gray-600' : 'bg-gray-100 text-gray-700 border border-gray-200'}`
-                    : `${darkMode ? 'bg-gray-700 text-gray-200 border border-gray-600' : 'bg-white text-gray-800 border border-gray-200'}`
-                }`}
-              >
-                {!msg.isOwn && msg.sender !== 'System' && (
-                  <p className={`text-xs font-medium mb-1 opacity-70`}>{msg.sender}</p>
+              {/* Action buttons */}
+              <div className="form-actions">
+                {!showJoinExisting ? (
+                  <>
+                    <button
+                      className="btn btn-primary"
+                      onClick={createRoom}
+                      disabled={!username.trim() || !connected}
+                    >
+                      Create new room
+                    </button>
+                    <button
+                      className="btn btn-outline"
+                      onClick={() => { setShowJoinExisting(true); setRoomId("") }}
+                      disabled={!username.trim() || !connected}
+                    >
+                      Join existing room
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <button
+                      className="btn btn-primary"
+                      onClick={joinExistingRoom}
+                      disabled={!roomId.trim() || !username.trim() || !connected}
+                    >
+                      Join room
+                    </button>
+                    <button
+                      className="btn btn-ghost"
+                      onClick={() => { setShowJoinExisting(false); setRoomId("") }}
+                    >
+                      <ArrowLeft size={14} />
+                      Back
+                    </button>
+                  </>
                 )}
-
-{msg.image && (
-  <div className="mt-2">
-    <img
-      src={msg.image}
-      alt="Sent"
-      className="max-w-xs sm:max-w-sm md:max-w-md rounded-xl border cursor-zoom-in hover:opacity-90 transition"
-      onClick={() => setZoomImage(msg.image)}
-    />
-  </div>
-)}
-
-
-{msg.text && (
-  <p
-    className={`leading-relaxed break-words ${
-      /^[\p{Emoji}\s]+$/u.test(msg.text) ? 'text-3xl' : 'emoji-size-fix'
-    }`}
-    dangerouslySetInnerHTML={{
-      __html: /^[\p{Emoji}\s]+$/u.test(msg.text)
-        ? msg.text
-        : wrapEmojis(msg.text),
-    }}
-  />
-)}
-
-
-
-                <p className={`text-xs mt-1 ${msg.isOwn ? 'text-white/70' : darkMode ? 'text-gray-500' : 'text-gray-400'}`}>
-                  {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                </p>
               </div>
             </div>
-          ))
-        )}
-{imageUploading && (
-  <div className="fixed bottom-[100px] left-1/2 transform -translate-x-1/2 bg-black/80 text-white px-4 py-2 rounded-xl shadow-lg z-[999] flex items-center space-x-2">
-    <svg className="animate-spin h-5 w-5" viewBox="0 0 24 24">
-      <circle
-        className="opacity-25"
-        cx="12"
-        cy="12"
-        r="10"
-        stroke="currentColor"
-        strokeWidth="4"
-        fill="none"
-      />
-      <path
-        className="opacity-75"
-        fill="currentColor"
-        d="M4 12a8 8 0 018-8v8H4z"
-      />
-    </svg>
-    <span className="text-sm">Sending image...</span>
-  </div>
-)}
-        <div ref={messagesEndRef} />
+
+            {/* Connection status */}
+            <div className="join-status-row">
+              <div className={`pulse-dot ${connected ? 'pulse-dot--on' : 'pulse-dot--off'}`} />
+              <span className="join-status-text">
+                {connected ? 'Connected to server' : 'Disconnected'}
+              </span>
+            </div>
+          </div>
+
+          <div className="join-credit">Built by Harsh Gupta</div>
+        </div>
       </div>
+    )
+  }
 
-      {/* Message Input */}
-      <div className={`fixed bottom-0 w-full z-50 ${darkMode ? 'bg-gray-800/80' : 'bg-white/80'} backdrop-blur-sm border-t ${darkMode ? 'border-gray-700/20' : 'border-white/20'} p-6`}>
-        <div className="flex items-center space-x-4">
-          <div className="flex-1 relative">
-                      <div ref={emojiPickerRef}>
-            <button
-    type="button"
-    className="absolute left-4 top-1/2 -translate-y-1/2 z-10"
-    onClick={() => setShowEmojiPicker((prev) => !prev)}
-  >
-    <Smile className="w-5 h-5 text-yellow-500" />
-  </button>
+  // ============================================================
+  // CHAT SCREEN
+  // ============================================================
+  return (
+    <div className={rootCls}>
+      <div className="chat-root">
 
-  {showEmojiPicker && (
-    <div className="absolute bottom-14 left-0 z-50">
-      <EmojiPicker
-        onEmojiClick={onEmojiClick}
-        theme={darkMode ? 'dark' : 'light'}
-      />
-    </div>
-  )}
-  </div>
-  <input
-  type="file"
-  accept="image/*"
-  onChange={handleImageUpload}
-  className="hidden"
-  id="image-upload"
-/>
-<label htmlFor="image-upload" className="cursor-pointer absolute left-12 top-1/2 -translate-y-1/2 z-10">
-  <ImageIcon className="w-5 h-5 text-pink-400 hover:scale-110 transition-transform" />
-</label>
+        {/* ── Header ── */}
+        <header className="chat-header">
+          <div className="chat-header-left">
+            <div className="chat-logo-sm">E</div>
 
+            <div className="chat-room-meta">
+              <div className="chat-room-row">
+                <span className="chat-room-tag">ROOM</span>
+                <code className="chat-room-id">{roomId}</code>
+                <button className="copy-pill" onClick={copyRoomId}>
+                  {copied ? <Check size={11} /> : <Copy size={11} />}
+                  {copied ? 'Copied' : 'Copy'}
+                </button>
+              </div>
+              <div className="chat-user-line">
+                Signed in as <strong>{username}</strong>
+              </div>
+            </div>
+          </div>
+
+          <div className="chat-header-right">
+            <div className="online-count">
+              <div className="online-dot" />
+              <span>{usersCount > 0 ? usersCount - 1 : 0} online</span>
+            </div>
+
+            <div className="h-sep" />
+
+            <div className={`conn-badge ${connected ? 'on' : 'off'}`}>
+              {connected
+                ? <Wifi size={13} />
+                : <WifiOff size={13} />}
+              <span>{connected ? 'Live' : 'Offline'}</span>
+            </div>
+
+            <button className="icon-btn" onClick={toggleDarkMode} aria-label="Toggle theme">
+              {darkMode ? <Sun size={15} /> : <Moon size={15} />}
+            </button>
+
+            <button className="leave-btn" onClick={leaveRoom}>
+              <LogOut size={13} />
+              <span>Leave</span>
+            </button>
+          </div>
+        </header>
+
+        {/* ── Messages ── */}
+        <main className="chat-messages">
+          {messages.length === 0 ? (
+            <div className="chat-empty">
+              <div className="chat-empty-rings">
+                <div className="ring ring-1" />
+                <div className="ring ring-2" />
+                <div className="ring ring-3" />
+              </div>
+              <p className="chat-empty-title">Room is quiet</p>
+              <p className="chat-empty-sub">Send the first message to get started</p>
+            </div>
+          ) : (
+            <div className="messages-list">
+              {messages.map(msg => {
+                if (msg.sender === 'System') {
+                  return (
+                    <div key={msg.id} className="msg-system">
+                      <span>{msg.text}</span>
+                    </div>
+                  )
+                }
+
+                const isEmojiOnly = /^[\p{Emoji}\s]+$/u.test(msg.text || '')
+
+                return (
+                  <div
+                    key={msg.id}
+                    className={`msg-row ${msg.isOwn ? 'msg-row--own' : 'msg-row--other'}`}
+                  >
+                    <div className={`msg-bubble ${msg.isOwn ? 'msg-bubble--own' : 'msg-bubble--other'}`}>
+                      {!msg.isOwn && (
+                        <div className="msg-sender">{msg.sender}</div>
+                      )}
+
+                      {msg.image && (
+                        <img
+                          src={msg.image}
+                          alt="Shared image"
+                          className="msg-img"
+                          onClick={() => setZoomImage(msg.image)}
+                        />
+                      )}
+
+                      {msg.text && (
+                        <p
+                          className={`msg-text ${isEmojiOnly ? 'msg-text--big' : 'emoji-size-fix'}`}
+                          dangerouslySetInnerHTML={{
+                            __html: isEmojiOnly ? msg.text : wrapEmojis(msg.text)
+                          }}
+                        />
+                      )}
+
+                      <div className="msg-time">
+                        {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          )}
+
+          {/* Upload indicator */}
+          {imageUploading && (
+            <div className="upload-toast">
+              <div className="spinner" />
+              <span>Sending image</span>
+            </div>
+          )}
+
+          <div ref={messagesEndRef} />
+        </main>
+
+        {/* ── Input bar ── */}
+        <footer className="chat-input-bar">
+          <div className="chat-input-wrap" ref={emojiPickerRef}>
+            {/* Left action buttons */}
+            <div className="input-action-btns">
+              <button
+                type="button"
+                className="input-action"
+                onClick={() => setShowEmojiPicker(p => !p)}
+                aria-label="Toggle emoji picker"
+              >
+                <Smile size={17} />
+              </button>
+
+              <input
+                type="file"
+                accept="image/*"
+                onChange={handleImageUpload}
+                className="hidden"
+                id="img-upload"
+              />
+              <label
+                htmlFor="img-upload"
+                className="input-action"
+                style={{ cursor: 'pointer' }}
+                aria-label="Upload image"
+              >
+                <ImageIcon size={17} />
+              </label>
+            </div>
+
+            {/* Text input */}
             <input
               type="text"
               value={message}
-              onChange={(e) => setMessage(e.target.value)}
+              onChange={e => setMessage(e.target.value)}
               onKeyDown={handleKeyPress}
-              placeholder="Type your message..."
-              className={`w-full pl-20 pr-12 py-3 border ${
-    darkMode
-      ? 'border-gray-600 bg-gray-700 text-white placeholder-gray-400'
-      : 'border-gray-300 bg-white text-gray-900 placeholder-gray-500'
-  } rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none transition-all duration-200`}
+              placeholder="Write a message..."
+              className="chat-input-field"
             />
-  
+
+            {/* Send button */}
             <button
+              className="send-btn"
               onClick={sendMessage}
               disabled={!message.trim() || !connected}
-              className="absolute right-2 top-1/2 transform -translate-y-1/2 bg-gradient-to-r from-blue-500 to-purple-600 text-white p-2 rounded-lg hover:from-blue-600 hover:to-purple-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 transform hover:scale-105"
+              aria-label="Send message"
             >
-              <Send className="w-4 h-4" />
+              <Send size={15} />
             </button>
-          </div>
-        </div>
-      </div>
-      {zoomImage && (
-  <div
-    className="fixed inset-0 bg-black/80 flex items-center justify-center z-[999]"
-    onClick={()=> setZoomImage(null)}
-  >
-    <img
-      src={zoomImage}
-      alt="Zoomed"
-      className="max-h-[90vh] max-w-[90vw] rounded-xl shadow-2xl"
-      onClick={(e) => e.stopPropagation()} 
-    />
-    <button
-      onClick={()=> setZoomImage(null)}
-      className="absolute top-4 right-4 text-white text-3xl bg-black/50 hover:bg-black/80 px-4 py-2 rounded-full"
-    >
-      &times;
-    </button>
-  </div>
-)}
 
+            {/* Emoji picker */}
+            {showEmojiPicker && (
+              <div className="emoji-picker-wrap">
+                <EmojiPicker
+                  onEmojiClick={onEmojiClick}
+                  theme={darkMode ? 'dark' : 'light'}
+                />
+              </div>
+            )}
+          </div>
+        </footer>
+      </div>
+
+      {/* ── Image zoom overlay ── */}
+      {zoomImage && (
+        <div className="zoom-overlay" onClick={() => setZoomImage(null)}>
+          <img
+            src={zoomImage}
+            alt="Zoomed"
+            className="zoom-img"
+            onClick={e => e.stopPropagation()}
+          />
+          <button
+            className="zoom-close-btn"
+            onClick={() => setZoomImage(null)}
+            aria-label="Close zoom"
+          >
+            &times;
+          </button>
+        </div>
+      )}
     </div>
-  );
+  )
 }
 
 export default App
