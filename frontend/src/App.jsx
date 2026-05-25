@@ -1,7 +1,8 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import {
   Send, Wifi, WifiOff, Moon, Sun,
-  Smile, ImageIcon, LogOut, Copy, Check, ArrowLeft, Hash
+  Smile, ImageIcon, LogOut, Copy, Check, ArrowLeft, Hash,
+  AlertCircle, History, RefreshCw
 } from 'lucide-react'
 import EmojiPicker from 'emoji-picker-react'
 import { v4 as uuidv4 } from 'uuid'
@@ -76,19 +77,33 @@ const emptyVariants = {
 }
 
 /* ============================================================
+   RECONNECT CONFIG
+   ============================================================ */
+const RECONNECT_BASE_MS  = 1_000
+const RECONNECT_MAX_MS   = 30_000
+const RECONNECT_JITTER   = 0.2   // ±20% jitter
+
+function getReconnectDelay(attempt) {
+  const base  = Math.min(RECONNECT_BASE_MS * 2 ** attempt, RECONNECT_MAX_MS)
+  const jitter = base * RECONNECT_JITTER * (Math.random() * 2 - 1)
+  return Math.round(base + jitter)
+}
+
+/* ============================================================
    APP
    ============================================================ */
 
 function App() {
   const [username, setUsername]               = useState("")
   const [roomId, setRoomId]                   = useState("")
-  const [connected, setconnected]             = useState(false)
+  const [connected, setConnected]             = useState(false)
   const [joined, setJoined]                   = useState(false)
   const [usersCount, setUsersCount]           = useState(0)
   const [messages, setMessages]               = useState([])
   const messagesEndRef                        = useRef()
   const [message, setMessage]                 = useState("")
-  const [ws, setwsocket]                      = useState()
+  const [ws, setWs]                           = useState(null)
+  const wsRef                                 = useRef(null)
   const [darkMode, setDarkMode]               = useState(true)
   const usernameRef                           = useRef(username)
   const [mySessionId, setMySessionId]         = useState(null)
@@ -99,23 +114,84 @@ function App() {
   const [imageUploading, setImageUploading]   = useState(false)
   const [showJoinExisting, setShowJoinExisting] = useState(false)
   const [copied, setCopied]                   = useState(false)
+  const [errorToast, setErrorToast]           = useState(null)
+  const [reconnecting, setReconnecting]       = useState(false)
 
-  // ── WebSocket bootstrap ─────────────────────────────────
-  useEffect(() => {
+  // Refs kept stable across renders
+  const joinedRef       = useRef(joined)
+  const roomIdRef       = useRef(roomId)
+  const reconnectTimer  = useRef(null)
+  const reconnectAttempt = useRef(0)
+  const intentionalClose = useRef(false)
+
+  useEffect(() => { joinedRef.current   = joined  }, [joined])
+  useEffect(() => { roomIdRef.current   = roomId  }, [roomId])
+  useEffect(() => { usernameRef.current = username }, [username])
+
+  // ── Error toast helper ───────────────────────
+  const showError = useCallback((msg, durationMs = 4000) => {
+    setErrorToast(msg)
+    setTimeout(() => setErrorToast(null), durationMs)
+  }, [])
+
+  // ── WebSocket factory — called on first connect and every reconnect ──
+  const createSocket = useCallback(() => {
     const socket = new WebSocket(import.meta.env.VITE_WEBSOCKET_URL)
-    setwsocket(socket)
-    socket.onopen = () => setconnected(true)
+    wsRef.current = socket
+    setWs(socket)
+
+    socket.onopen = () => {
+      setConnected(true)
+      setReconnecting(false)
+      reconnectAttempt.current = 0
+
+      // If we're already in a room (i.e. this is a reconnect), re-join
+      if (joinedRef.current && roomIdRef.current && usernameRef.current) {
+        socket.send(JSON.stringify({
+          type:    'join',
+          payload: { roomId: roomIdRef.current, username: usernameRef.current }
+        }))
+      }
+    }
 
     socket.onmessage = (e) => {
-      const parsed = JSON.parse(e.data)
+      let parsed
+      try { parsed = JSON.parse(e.data) } catch { return }
 
+      // ── Error from server ──────────────────────
+      if (parsed.type === 'error') {
+        showError(parsed.message || 'Server error')
+        setImageUploading(false)
+        return
+      }
+
+      // ── Session assignment ─────────────────────
       if (parsed.type === 'session') {
         mySessionIdRef.current = parsed.sessionId
         setMySessionId(parsed.sessionId)
         return
       }
 
-      if (parsed.sender === "System") {
+      // ── Pong (app-level heartbeat) ─────────────
+      if (parsed.type === 'pong') return
+
+      // ── Chat history (on join) ─────────────────
+      if (parsed.type === 'history') {
+        const historyMsgs = parsed.messages.map(m => ({
+          id:        uuidv4(),
+          isOwn:     m.sessionId === mySessionIdRef.current,
+          sender:    m.sender,
+          text:      m.text   || null,
+          image:     m.image  || null,
+          timestamp: new Date(m.timestamp),
+          isHistory: true
+        }))
+        setMessages(historyMsgs)
+        return
+      }
+
+      // ── System events ──────────────────────────
+      if (parsed.sender === 'System') {
         setUsersCount(parsed.usersCount)
         if (parsed.message === 'join' && parsed.username !== usernameRef.current) {
           setMessages(prev => [...prev, {
@@ -131,32 +207,67 @@ function App() {
             timestamp: new Date(parsed.timestamp)
           }])
         }
-      } else {
-        setMessages(prev => [...prev, {
-          id: uuidv4(),
-          isOwn: parsed.sessionId === mySessionIdRef.current,
-          sender: parsed.sender,
-          text: parsed.text,
-          image: parsed.image,
-          timestamp: new Date(parsed.timestamp)
-        }])
-        setImageUploading(false)
+        return
       }
+
+      // ── Chat message ───────────────────────────
+      setMessages(prev => {
+        // Deduplicate — during reconnect we may get duplicate delivery
+        const exists = prev.some(m => m.id === parsed.id)
+        if (exists) return prev
+        return [...prev, {
+          id:        uuidv4(),
+          isOwn:     parsed.sessionId === mySessionIdRef.current,
+          sender:    parsed.sender,
+          text:      parsed.text  || null,
+          image:     parsed.image || null,
+          timestamp: new Date(parsed.timestamp)
+        }]
+      })
+      setImageUploading(false)
     }
 
-    return () => { if (connected) socket.close() }
-  }, [])
+    socket.onclose = (event) => {
+      setConnected(false)
 
+      if (intentionalClose.current) {
+        intentionalClose.current = false
+        return
+      }
+
+      // Unexpected close — schedule reconnect with exponential back-off
+      setReconnecting(true)
+      const delay = getReconnectDelay(reconnectAttempt.current)
+      reconnectAttempt.current++
+
+      reconnectTimer.current = setTimeout(() => {
+        createSocket()
+      }, delay)
+    }
+
+    socket.onerror = () => {
+      // onclose fires after onerror; reconnect logic lives there
+    }
+
+    return socket
+  }, [showError])
+
+  // ── Bootstrap ────────────────────────────────
+  useEffect(() => {
+    createSocket()
+    return () => {
+      intentionalClose.current = true
+      clearTimeout(reconnectTimer.current)
+      wsRef.current?.close()
+    }
+  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Auto-scroll ──────────────────────────────
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  useEffect(() => { usernameRef.current = username }, [username])
-
-  useEffect(() => {
-    return () => { if (ws && ws.readyState === WebSocket.OPEN) ws.close() }
-  }, [ws])
-
+  // ── Close emoji picker on outside click ─────
   useEffect(() => {
     const handleOutside = (e) => {
       if (emojiPickerRef.current && !emojiPickerRef.current.contains(e.target))
@@ -166,9 +277,19 @@ function App() {
     return () => document.removeEventListener("mousedown", handleOutside)
   }, [])
 
-  useEffect(() => () => setImageUploading(false), [])
+  // ── App-level ping (keep-alive) ──────────────
+  useEffect(() => {
+    const id = setInterval(() => {
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'ping' }))
+      }
+    }, 25_000)
+    return () => clearInterval(id)
+  }, [])
 
-  // ── Helpers ─────────────────────────────────────────────
+  // ─────────────────────────────────────────────
+  //  Helpers
+  // ─────────────────────────────────────────────
   function wrapEmojis(text) {
     return text.replace(
       /(\p{Emoji_Presentation}|\p{Emoji}\uFE0F|\p{Extended_Pictographic})/gu,
@@ -176,34 +297,51 @@ function App() {
     )
   }
 
-  function handleKeyPress(e) {
-    if (e.key === 'Enter' && message && connected) sendMessage()
+  function safeSend(payload) {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify(payload))
+    } else {
+      showError('Not connected — message not sent')
+    }
   }
 
-  // ── Room actions ────────────────────────────────────────
+  function handleKeyPress(e) {
+    if (e.key === 'Enter' && message.trim() && connected) sendMessage()
+  }
+
+  // ─────────────────────────────────────────────
+  //  Room actions
+  // ─────────────────────────────────────────────
   function createRoom() {
     const id = nanoid(10)
     setRoomId(id)
-    ws.send(JSON.stringify({ type: "join", payload: { roomId: id, username } }))
+    safeSend({ type: 'join', payload: { roomId: id, username: username.trim() } })
+    // Request history after join
+    setTimeout(() => safeSend({ type: 'history' }), 300)
     setJoined(true)
+    setMessages([])
   }
 
   function joinExistingRoom() {
-    ws.send(JSON.stringify({ type: "join", payload: { roomId, username } }))
+    safeSend({ type: 'join', payload: { roomId: roomId.trim(), username: username.trim() } })
+    // Request recent message history after joining
+    setTimeout(() => safeSend({ type: 'history' }), 300)
     setJoined(true)
+    setMessages([])
   }
 
   function leaveRoom() {
-    if (ws && ws.readyState === WebSocket.OPEN)
-      ws.send(JSON.stringify({ type: "leave", payload: { roomId, username } }))
+    safeSend({ type: 'leave', payload: { roomId, username } })
     setJoined(false)
     setUsername("")
     setRoomId("")
     setMessages([])
+    setUsersCount(0)
   }
 
   function sendMessage() {
-    ws.send(JSON.stringify({ type: 'chat', payload: { message, roomId, username } }))
+    if (!message.trim()) return
+    safeSend({ type: 'chat', payload: { message: message.trim(), roomId, username } })
     setMessage("")
   }
 
@@ -221,29 +359,42 @@ function App() {
     const file = e.target.files[0]
     if (!file || !connected) return
     e.target.value = null
+
+    // Validate type
+    if (!file.type.startsWith('image/')) {
+      showError('Only image files are supported')
+      return
+    }
+
+    // Client-side size limit: ~2 MB
+    if (file.size > 2 * 1024 * 1024) {
+      showError('Image too large — max 2 MB')
+      return
+    }
+
     setImageUploading(true)
     const reader = new FileReader()
     reader.onloadend = () => {
-      ws.send(JSON.stringify({
-        type: 'chat',
-        payload: { image: reader.result, roomId, username }
-      }))
+      safeSend({ type: 'chat', payload: { image: reader.result, roomId, username } })
+    }
+    reader.onerror = () => {
+      setImageUploading(false)
+      showError('Could not read image file')
     }
     reader.readAsDataURL(file)
   }
 
   const rootCls = `app-root${darkMode ? '' : ' light'}`
 
-  // ============================================================
-  // JOIN SCREEN
-  // ============================================================
+  /* ============================================================
+     JOIN SCREEN
+     ============================================================ */
   if (!joined) {
     return (
       <div className={rootCls}>
         <div className="join-screen">
           <div className="join-glow" />
 
-          {/* Theme toggle */}
           <motion.button
             className="theme-toggle-fixed"
             onClick={() => setDarkMode(d => !d)}
@@ -265,14 +416,12 @@ function App() {
             </AnimatePresence>
           </motion.button>
 
-          {/* Card */}
           <motion.div
             className="join-card"
             variants={cardVariants}
             initial="hidden"
             animate="visible"
           >
-            {/* Brand */}
             <motion.div
               className="join-brand"
               custom={0}
@@ -330,7 +479,6 @@ function App() {
             />
 
             <div className="join-form">
-              {/* Name field */}
               <motion.div
                 className="form-field"
                 custom={2}
@@ -343,12 +491,16 @@ function App() {
                   type="text"
                   value={username}
                   onChange={e => setUsername(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter' && username.trim() && connected && !showJoinExisting)
+                      createRoom()
+                  }}
                   placeholder="Who are you?"
                   className="form-input"
+                  maxLength={30}
                 />
               </motion.div>
 
-              {/* Room ID — join existing only */}
               <AnimatePresence>
                 {showJoinExisting && (
                   <motion.div
@@ -370,11 +522,12 @@ function App() {
                           value={roomId}
                           onChange={e => setRoomId(e.target.value)}
                           onKeyDown={e => {
-                            if (e.key === 'Enter' && username && roomId && connected)
+                            if (e.key === 'Enter' && username.trim() && roomId.trim() && connected)
                               joinExistingRoom()
                           }}
                           placeholder="Paste room code here"
                           className="form-input form-input--icon"
+                          maxLength={50}
                         />
                       </div>
                     </div>
@@ -382,7 +535,6 @@ function App() {
                 )}
               </AnimatePresence>
 
-              {/* Action buttons */}
               <motion.div
                 custom={3}
                 variants={formFieldVariants}
@@ -455,7 +607,6 @@ function App() {
               </motion.div>
             </div>
 
-            {/* Connection status */}
             <motion.div
               className="join-status-row"
               custom={4}
@@ -475,8 +626,17 @@ function App() {
                 transition={{ repeat: Infinity, duration: 2, ease: 'easeInOut' }}
               />
               <span className="join-status-text">
-                {connected ? 'Connected to server' : 'Disconnected'}
+                {reconnecting ? 'Reconnecting…' : connected ? 'Connected to server' : 'Disconnected'}
               </span>
+              {reconnecting && (
+                <motion.span
+                  animate={{ rotate: 360 }}
+                  transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}
+                  style={{ display: 'flex', marginLeft: 4 }}
+                >
+                  <RefreshCw size={12} style={{ color: 'var(--accent)' }} />
+                </motion.span>
+              )}
             </motion.div>
           </motion.div>
 
@@ -489,13 +649,29 @@ function App() {
             Built by Harsh Gupta
           </motion.div>
         </div>
+
+        {/* Error toast */}
+        <AnimatePresence>
+          {errorToast && (
+            <motion.div
+              className="error-toast"
+              variants={toastVariants}
+              initial="hidden"
+              animate="visible"
+              exit="exit"
+            >
+              <AlertCircle size={14} />
+              <span>{errorToast}</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
     )
   }
 
-  // ============================================================
-  // CHAT SCREEN
-  // ============================================================
+  /* ============================================================
+     CHAT SCREEN
+     ============================================================ */
   return (
     <div className={rootCls}>
       <div className="chat-root">
@@ -560,6 +736,24 @@ function App() {
           </div>
 
           <div className="chat-header-right">
+            {reconnecting && (
+              <motion.div
+                className="reconnect-badge"
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0 }}
+              >
+                <motion.span
+                  animate={{ rotate: 360 }}
+                  transition={{ repeat: Infinity, duration: 1, ease: 'linear' }}
+                  style={{ display: 'flex' }}
+                >
+                  <RefreshCw size={11} />
+                </motion.span>
+                <span>Reconnecting</span>
+              </motion.div>
+            )}
+
             <div className="online-count">
               <motion.div
                 className="online-dot"
@@ -653,7 +847,11 @@ function App() {
           {messages.length > 0 && (
             <div className="messages-list">
               <AnimatePresence initial={false}>
-                {messages.map(msg => {
+                {messages.map((msg, idx) => {
+                  // History divider before first real-time message
+                  const prevIsHistory = idx > 0 && messages[idx - 1].isHistory
+                  const showDivider   = prevIsHistory && !msg.isHistory
+
                   if (msg.sender === 'System') {
                     return (
                       <motion.div
@@ -671,52 +869,59 @@ function App() {
                   const isEmojiOnly = /^[\p{Emoji}\s]+$/u.test(msg.text || '')
 
                   return (
-                    <motion.div
-                      key={msg.id}
-                      className={`msg-row ${msg.isOwn ? 'msg-row--own' : 'msg-row--other'}`}
-                      variants={msg.isOwn ? ownBubbleVariants : otherBubbleVariants}
-                      initial="hidden"
-                      animate="visible"
-                      layout
-                    >
-                      <motion.div
-                        className={`msg-bubble ${msg.isOwn ? 'msg-bubble--own' : 'msg-bubble--other'}`}
-                        whileHover={{ scale: 1.012 }}
-                        transition={{ duration: 0.14 }}
-                      >
-                        {!msg.isOwn && (
-                          <div className="msg-sender">{msg.sender}</div>
-                        )}
-
-                        {msg.image && (
-                          <motion.img
-                            src={msg.image}
-                            alt="Shared image"
-                            className="msg-img"
-                            onClick={() => setZoomImage(msg.image)}
-                            initial={{ opacity: 0, scale: 0.88 }}
-                            animate={{ opacity: 1, scale: 1 }}
-                            transition={springBouncy}
-                            whileHover={{ scale: 1.025, opacity: 0.9 }}
-                          />
-                        )}
-
-                        {msg.text && (
-                          <p
-                            className={`msg-text ${isEmojiOnly ? 'msg-text--big' : 'emoji-size-fix'}`}
-                            dangerouslySetInnerHTML={{
-                              __html: isEmojiOnly ? msg.text : wrapEmojis(msg.text)
-                            }}
-                          />
-                        )}
-
-                        <div className="msg-time">
-                          {msg.timestamp.toLocaleTimeString([], {
-                            hour: '2-digit', minute: '2-digit'
-                          })}
+                    <div key={msg.id}>
+                      {showDivider && (
+                        <div className="history-divider">
+                          <History size={10} />
+                          <span>Earlier messages</span>
                         </div>
+                      )}
+                      <motion.div
+                        className={`msg-row ${msg.isOwn ? 'msg-row--own' : 'msg-row--other'}`}
+                        variants={msg.isHistory ? systemMsgVariants : (msg.isOwn ? ownBubbleVariants : otherBubbleVariants)}
+                        initial="hidden"
+                        animate="visible"
+                        layout
+                      >
+                        <motion.div
+                          className={`msg-bubble ${msg.isOwn ? 'msg-bubble--own' : 'msg-bubble--other'} ${msg.isHistory ? 'msg-bubble--history' : ''}`}
+                          whileHover={{ scale: 1.012 }}
+                          transition={{ duration: 0.14 }}
+                        >
+                          {!msg.isOwn && msg.sender !== 'System' && (
+                            <div className="msg-sender">{msg.sender}</div>
+                          )}
+
+                          {msg.image && (
+                            <motion.img
+                              src={msg.image}
+                              alt="Shared image"
+                              className="msg-img"
+                              onClick={() => setZoomImage(msg.image)}
+                              initial={{ opacity: 0, scale: 0.88 }}
+                              animate={{ opacity: 1, scale: 1 }}
+                              transition={springBouncy}
+                              whileHover={{ scale: 1.025, opacity: 0.9 }}
+                            />
+                          )}
+
+                          {msg.text && (
+                            <p
+                              className={`msg-text ${isEmojiOnly ? 'msg-text--big' : 'emoji-size-fix'}`}
+                              dangerouslySetInnerHTML={{
+                                __html: isEmojiOnly ? msg.text : wrapEmojis(msg.text)
+                              }}
+                            />
+                          )}
+
+                          <div className="msg-time">
+                            {msg.timestamp.toLocaleTimeString([], {
+                              hour: '2-digit', minute: '2-digit'
+                            })}
+                          </div>
+                        </motion.div>
                       </motion.div>
-                    </motion.div>
+                    </div>
                   )
                 })}
               </AnimatePresence>
@@ -788,8 +993,10 @@ function App() {
               value={message}
               onChange={e => setMessage(e.target.value)}
               onKeyDown={handleKeyPress}
-              placeholder="Write a message..."
+              placeholder={connected ? 'Write a message…' : 'Reconnecting…'}
               className="chat-input-field"
+              maxLength={2000}
+              disabled={!connected}
             />
 
             <motion.button
@@ -810,7 +1017,6 @@ function App() {
               </motion.span>
             </motion.button>
 
-            {/* Emoji picker */}
             <AnimatePresence>
               {showEmojiPicker && (
                 <motion.div
@@ -864,6 +1070,22 @@ function App() {
             >
               &times;
             </motion.button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* ── Error toast ── */}
+      <AnimatePresence>
+        {errorToast && (
+          <motion.div
+            className="error-toast"
+            variants={toastVariants}
+            initial="hidden"
+            animate="visible"
+            exit="exit"
+          >
+            <AlertCircle size={14} />
+            <span>{errorToast}</span>
           </motion.div>
         )}
       </AnimatePresence>

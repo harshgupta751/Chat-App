@@ -525,6 +525,20 @@ input  { font-family: var(--ff-body); }
   border-color: rgba(248,113,113,0.4);
 }
 
+/* Reconnect badge */
+.reconnect-badge {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  padding: 4px 8px;
+  border-radius: var(--r-pill);
+  color: var(--accent);
+  background: var(--accent-dim);
+  border: 1px solid rgba(212,146,74,0.2);
+  font-weight: 500;
+}
+
 /* ---- Messages area ---- */
 .chat-messages {
   flex: 1;
@@ -606,6 +620,11 @@ input  { font-family: var(--ff-body); }
   border-bottom-left-radius: var(--r-sm);
 }
 
+/* History messages get a subtle opacity */
+.msg-bubble--history {
+  opacity: 0.75;
+}
+
 .msg-sender {
   font-size: 11px;
   font-weight: 600;
@@ -656,6 +675,25 @@ input  { font-family: var(--ff-body); }
   padding: 3px 12px;
   border-radius: var(--r-pill);
   border: 1px solid var(--border-subtle);
+}
+
+/* History divider */
+.history-divider {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  justify-content: center;
+  padding: 10px 0 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+.history-divider::before,
+.history-divider::after {
+  content: '';
+  flex: 1;
+  max-width: 60px;
+  height: 1px;
+  background: var(--border);
 }
 
 /* ---- Input bar ---- */
@@ -709,6 +747,7 @@ input  { font-family: var(--ff-body); }
   min-width: 0;
 }
 .chat-input-field::placeholder { color: var(--text-muted); }
+.chat-input-field:disabled { opacity: 0.5; cursor: not-allowed; }
 
 .send-btn {
   width: 36px;
@@ -759,6 +798,26 @@ input  { font-family: var(--ff-body); }
   z-index: 200;
   box-shadow: var(--shadow-md);
   animation: msg-in 0.2s ease-out;
+}
+
+/* Error toast */
+.error-toast {
+  position: fixed;
+  bottom: 88px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(248,113,113,0.12);
+  border: 1px solid rgba(248,113,113,0.3);
+  color: #F87171;
+  font-size: 13px;
+  padding: 8px 18px;
+  border-radius: var(--r-pill);
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  z-index: 300;
+  box-shadow: var(--shadow-md);
+  white-space: nowrap;
 }
 
 .spinner {
@@ -833,6 +892,8 @@ input  { font-family: var(--ff-body); }
   .msg-img            { max-width: 200px; }
   .chat-input-bar     { padding: 8px 10px 10px; }
   .join-card          { padding: 28px 20px; }
+  .reconnect-badge span { display: none; }
+  .error-toast        { font-size: 12px; padding: 6px 14px; }
 }
 
 @media (max-width: 380px) {
