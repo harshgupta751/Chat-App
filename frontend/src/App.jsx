@@ -159,9 +159,10 @@ function App() {
   const [copied, setCopied]                     = useState(false)
   const [errorToast, setErrorToast]             = useState(null)
   const [reconnecting, setReconnecting]         = useState(false)
+  // Inline error shown inside the join card (e.g. room not found)
+  const [roomError, setRoomError]               = useState(null)
 
   // ── Reply state ────────────────────────────────────────────
-  // replyingTo: { messageId, sender, sessionId, preview, isImage }
   const [replyingTo, setReplyingTo]             = useState(null)
   const inputRef                                = useRef()
 
@@ -171,6 +172,8 @@ function App() {
   const reconnectTimer   = useRef(null)
   const reconnectAttempt = useRef(0)
   const intentionalClose = useRef(false)
+  // Set once at mount — true if page was refreshed while inside a room
+  const isRejoinRef      = useRef(!!savedSession)
 
   useEffect(() => { joinedRef.current   = joined   }, [joined])
   useEffect(() => { roomIdRef.current   = roomId   }, [roomId])
@@ -195,9 +198,13 @@ function App() {
       if (joinedRef.current && roomIdRef.current && usernameRef.current) {
         socket.send(JSON.stringify({
           type:    'join',
-          // 'rejoin' — server skips room-exists check (restored from sessionStorage)
           payload: { roomId: roomIdRef.current, username: usernameRef.current, action: 'rejoin' }
         }))
+        // Request history after rejoin so messages reload on refresh
+        setTimeout(() => {
+          if (socket.readyState === WebSocket.OPEN)
+            socket.send(JSON.stringify({ type: 'history' }))
+        }, 300)
       }
     }
 
@@ -206,26 +213,29 @@ function App() {
       try { parsed = JSON.parse(e.data) } catch { return }
 
       if (parsed.type === 'error') {
-        showError(parsed.message || 'Server error')
         setImageUploading(false)
-        // If room doesn't exist, snap back to join screen
         if (parsed.code === 'ROOM_NOT_FOUND') {
+          // Show inline error inside the join card — not a floating toast
+          setRoomError('Room not found. Check the code and try again.')
           setJoined(false)
           clearSession()
+          isRejoinRef.current = false
+        } else {
+          showError(parsed.message || 'Server error')
         }
         return
       }
 
       if (parsed.type === 'session') {
-        const isRejoin = !!loadSession()  // if session exists already, this is a rejoin/refresh
         mySessionIdRef.current = parsed.sessionId
         setMySessionId(parsed.sessionId)
-        // Save session so refresh keeps us in the room
         saveSession(usernameRef.current, roomIdRef.current)
         setJoined(true)
-        // Clear messages only on fresh join — on rejoin/refresh keep messages
-        // until history arrives (avoids blank flash)
-        if (!isRejoin) setMessages([])
+        // On a fresh join or "join existing": clear messages so history loads clean
+        // On rejoin (refresh/reconnect): keep existing messages until history overwrites them
+        if (!isRejoinRef.current) setMessages([])
+        // After first session confirmation, future reconnects in this tab are rejoins
+        isRejoinRef.current = true
         return
       }
 
@@ -388,8 +398,7 @@ function App() {
   }
 
   function joinExistingRoom() {
-    // action:'join' — server checks the room actually exists before allowing entry
-    // Don't setJoined yet — wait for server 'session' confirmation
+    setRoomError(null)
     safeSend({ type: 'join', payload: { roomId: roomId.trim(), username: username.trim(), action: 'join' } })
     setTimeout(() => safeSend({ type: 'history' }), 300)
   }
@@ -523,10 +532,23 @@ function App() {
                       <label className="form-label">Room code</label>
                       <div className="form-input-wrap" style={{ marginTop: '7px' }}>
                         <span className="form-input-icon"><Hash size={13} /></span>
-                        <input type="text" value={roomId} onChange={e => setRoomId(e.target.value)}
+                        <input type="text" value={roomId} onChange={e => { setRoomId(e.target.value); setRoomError(null) }}
                           onKeyDown={e => { if (e.key === 'Enter' && username.trim() && roomId.trim() && connected) joinExistingRoom() }}
-                          placeholder="Paste room code here" className="form-input form-input--icon" maxLength={50} />
+                          placeholder="Paste room code here"
+                          className={`form-input form-input--icon${roomError ? ' form-input--error' : ''}`}
+                          maxLength={50} />
                       </div>
+                      {/* Inline error — shown only when room not found */}
+                      <AnimatePresence>
+                        {roomError && (
+                          <motion.div className="room-error"
+                            initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -4 }} transition={{ duration: 0.18 }}>
+                            <AlertCircle size={12} />
+                            <span>{roomError}</span>
+                          </motion.div>
+                        )}
+                      </AnimatePresence>
                     </div>
                   </motion.div>
                 )}
