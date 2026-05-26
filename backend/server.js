@@ -105,6 +105,9 @@ function validateJoin(payload) {
   if (payload.username.length > MAX_USERNAME_LENGTH)  return 'Username too long'
   // Allow letters, numbers, spaces, hyphens, underscores
   if (!/^[a-zA-Z0-9_\- ]+$/.test(payload.username)) return 'Invalid username characters'
+  // action must be one of the known values
+  const action = payload.action || 'create'
+  if (!['create', 'join', 'rejoin'].includes(action)) return 'Invalid action'
   return null
 }
 
@@ -169,7 +172,23 @@ wss.on('connection', async (ws, req) => {
       const err = validateJoin(msg.payload)
       if (err) return safeSend(ws, { type: 'error', message: err })
 
-      const { roomId, username } = msg.payload
+      const { roomId, username, action = 'create' } = msg.payload
+
+      // ── Room existence enforcement ──────────────────────────
+      // 'create'  → register room (nanoid-generated, from our own UI)
+      // 'join'    → must already exist in active_rooms
+      // 'rejoin'  → restore from sessionStorage/reconnect — allow even if
+      //             room temporarily has 0 members (server restarted)
+      if (action === 'join') {
+        const exists = await main.sIsMember('active_rooms', roomId)
+        if (!exists) {
+          return safeSend(ws, {
+            type:    'error',
+            code:    'ROOM_NOT_FOUND',
+            message: 'Room not found. Check the code and try again.'
+          })
+        }
+      }
 
       if (ws.roomId && ws.roomId !== roomId) {
         await handleLeave(ws, ws.roomId, ws.username, false)

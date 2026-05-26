@@ -953,11 +953,11 @@ input  { font-family: var(--ff-body); }
 
 .reply-preview {
   display: flex;
-  align-items: stretch;
+  align-items: center;      /* was stretch — caused tall bar on short content */
   gap: 8px;
   margin-bottom: 8px;
   border-radius: var(--r-sm);
-  padding: 6px 8px;
+  padding: 5px 8px;
   cursor: default;
   overflow: hidden;
 }
@@ -975,16 +975,19 @@ input  { font-family: var(--ff-body); }
 
 .reply-preview-bar {
   width: 3px;
+  height: 32px;             /* fixed height — always looks clean regardless of content length */
   border-radius: 2px;
   background: var(--accent);
   flex-shrink: 0;
+  align-self: center;
 }
 
 .reply-preview-content {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
   min-width: 0;
+  flex: 1;
 }
 
 .reply-preview-name {

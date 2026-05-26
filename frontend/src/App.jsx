@@ -101,14 +101,47 @@ function ReplyPreview({ replyTo, mySessionId, isOwnBubble }) {
   )
 }
 
+// ─────────────────────────────────────────────
+//  sessionStorage keys — persist room across refresh
+// ─────────────────────────────────────────────
+const SS_USERNAME = 'echo_username'
+const SS_ROOMID   = 'echo_roomId'
+
+function loadSession() {
+  try {
+    const u = sessionStorage.getItem(SS_USERNAME)
+    const r = sessionStorage.getItem(SS_ROOMID)
+    if (u && r) return { username: u, roomId: r }
+  } catch { /* sessionStorage blocked (private mode edge case) */ }
+  return null
+}
+
+function saveSession(username, roomId) {
+  try {
+    sessionStorage.setItem(SS_USERNAME, username)
+    sessionStorage.setItem(SS_ROOMID,   roomId)
+  } catch { /* ignore */ }
+}
+
+function clearSession() {
+  try {
+    sessionStorage.removeItem(SS_USERNAME)
+    sessionStorage.removeItem(SS_ROOMID)
+  } catch { /* ignore */ }
+}
+
 /* ============================================================
    APP
    ============================================================ */
 function App() {
-  const [username, setUsername]                 = useState("")
-  const [roomId, setRoomId]                     = useState("")
+  // Restore from sessionStorage so refresh keeps you in the room
+  const savedSession = loadSession()
+
+  const [username, setUsername]                 = useState(savedSession?.username || "")
+  const [roomId, setRoomId]                     = useState(savedSession?.roomId   || "")
   const [connected, setConnected]               = useState(false)
-  const [joined, setJoined]                     = useState(false)
+  // Start as joined if we have a saved session — WS onopen will re-join
+  const [joined, setJoined]                     = useState(!!savedSession)
   const [usersCount, setUsersCount]             = useState(0)
   const [messages, setMessages]                 = useState([])
   const messagesEndRef                          = useRef()
@@ -162,7 +195,8 @@ function App() {
       if (joinedRef.current && roomIdRef.current && usernameRef.current) {
         socket.send(JSON.stringify({
           type:    'join',
-          payload: { roomId: roomIdRef.current, username: usernameRef.current }
+          // 'rejoin' — server skips room-exists check (restored from sessionStorage)
+          payload: { roomId: roomIdRef.current, username: usernameRef.current, action: 'rejoin' }
         }))
       }
     }
@@ -174,12 +208,24 @@ function App() {
       if (parsed.type === 'error') {
         showError(parsed.message || 'Server error')
         setImageUploading(false)
+        // If room doesn't exist, snap back to join screen
+        if (parsed.code === 'ROOM_NOT_FOUND') {
+          setJoined(false)
+          clearSession()
+        }
         return
       }
 
       if (parsed.type === 'session') {
+        const isRejoin = !!loadSession()  // if session exists already, this is a rejoin/refresh
         mySessionIdRef.current = parsed.sessionId
         setMySessionId(parsed.sessionId)
+        // Save session so refresh keeps us in the room
+        saveSession(usernameRef.current, roomIdRef.current)
+        setJoined(true)
+        // Clear messages only on fresh join — on rejoin/refresh keep messages
+        // until history arrives (avoids blank flash)
+        if (!isRejoin) setMessages([])
         return
       }
 
@@ -332,21 +378,25 @@ function App() {
   function createRoom() {
     const id = nanoid(10)
     setRoomId(id)
-    safeSend({ type: 'join', payload: { roomId: id, username: username.trim() } })
+    roomIdRef.current = id
+    // action:'create' — server registers this roomId as valid
+    safeSend({ type: 'join', payload: { roomId: id, username: username.trim(), action: 'create' } })
     setTimeout(() => safeSend({ type: 'history' }), 300)
+    // Optimistically enter chat — session saved when server confirms with 'session' message
     setJoined(true)
     setMessages([])
   }
 
   function joinExistingRoom() {
-    safeSend({ type: 'join', payload: { roomId: roomId.trim(), username: username.trim() } })
+    // action:'join' — server checks the room actually exists before allowing entry
+    // Don't setJoined yet — wait for server 'session' confirmation
+    safeSend({ type: 'join', payload: { roomId: roomId.trim(), username: username.trim(), action: 'join' } })
     setTimeout(() => safeSend({ type: 'history' }), 300)
-    setJoined(true)
-    setMessages([])
   }
 
   function leaveRoom() {
     safeSend({ type: 'leave', payload: { roomId, username } })
+    clearSession()
     setJoined(false)
     setUsername("")
     setRoomId("")
