@@ -559,7 +559,8 @@ input  { font-family: var(--ff-body); }
 .chat-messages {
   flex: 1;
   overflow-y: auto;
-  padding: 28px 20px 12px;
+  overflow-x: hidden;
+  padding: 28px 40px 12px;   /* 40px sides = room for abs-positioned reply btns */
   display: flex;
   flex-direction: column;
 }
@@ -600,15 +601,17 @@ input  { font-family: var(--ff-body); }
 }
 .chat-empty-sub { font-size: 13px; color: var(--text-muted); }
 
-.messages-list { display: flex; flex-direction: column; gap: 3px; }
+.messages-list { display: flex; flex-direction: column; gap: 4px; }
 
 /* ---- Message rows ---- */
+/* msg-row-outer: the positioning context for the abs reply btn */
+/* It must NOT clip overflow so the reply btn can float outside */
+
+/* msg-row: full width so bubble's max-width % works off the real container */
 .msg-row {
   display: flex;
-  animation: msg-in 0.22s ease-out both;
-  align-items: flex-start;
-  /* Fill the full width of msg-row-outer so bubble's max-width % is calculated correctly */
   width: 100%;
+  animation: msg-in 0.22s ease-out both;
 }
 .msg-row--own   { justify-content: flex-end; }
 .msg-row--other { justify-content: flex-start; }
@@ -619,14 +622,19 @@ input  { font-family: var(--ff-body); }
 }
 
 .msg-bubble {
-  max-width: min(68%, 500px);
-  padding: 10px 14px;
+  /* max-width so long messages wrap properly */
+  max-width: min(65%, 480px);
+  /* min-width so tiny words like "Hi" don't make a 30px bubble */
+  min-width: 60px;
+  padding: 9px 13px 7px;
   border-radius: var(--r-lg);
-  /* Only break genuinely unbreakable strings like long URLs */
-  overflow-wrap: break-word;
+  /* Only break at word boundaries. overflow-wrap handles genuinely
+     unbreakable strings (long URLs) as last resort */
   word-break: normal;
-  /* Ensure text inside never wraps at character level */
+  overflow-wrap: anywhere;
   hyphens: none;
+  /* Clip timestamp inside bubble — prevents it from overflowing */
+  overflow: hidden;
 }
 
 .msg-bubble--own {
@@ -643,43 +651,50 @@ input  { font-family: var(--ff-body); }
   border-bottom-left-radius: var(--r-sm);
 }
 
-/* History messages get a subtle opacity */
-.msg-bubble--history {
-  opacity: 0.75;
-}
+.msg-bubble--history { opacity: 0.75; }
 
 .msg-sender {
   font-size: 11px;
   font-weight: 600;
   color: var(--accent);
-  margin-bottom: 5px;
+  margin-bottom: 4px;
   letter-spacing: 0.01em;
-  white-space: nowrap;    /* sender name never breaks e.g. "Harsh" stays on one line */
+  /* Sender name never wraps or breaks — "Raman" stays "Raman" */
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 160px;
+  max-width: 140px;
 }
 
 .msg-text {
   font-size: 14px;
   line-height: 1.55;
   margin: 0;
-  /* Words wrap at word boundaries only, never mid-character */
+  /* break at word boundaries only */
   word-break: normal;
-  overflow-wrap: break-word;
+  overflow-wrap: anywhere;
 }
 .msg-text--big { font-size: 28px; line-height: 1.3; }
+
+/* Timestamp row — sits at bottom right of bubble, never overflows */
+.msg-meta {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+.msg-bubble--other .msg-meta { justify-content: flex-start; }
 
 .msg-time {
   font-size: 10px;
   color: var(--text-muted);
-  margin-top: 5px;
-  text-align: right;
   font-family: var(--ff-mono);
   letter-spacing: 0.02em;
-  white-space: nowrap;   /* timestamp never wraps — prevents it from inflating bubble width */
+  white-space: nowrap;
+  /* Never let it overflow — clip silently */
+  overflow: hidden;
+  text-overflow: clip;
+  max-width: 100%;
 }
-.msg-bubble--other .msg-time { text-align: left; }
 
 .msg-img {
   max-width: 260px;
@@ -918,16 +933,18 @@ input  { font-family: var(--ff-body); }
   .conn-badge span    { display: none; }
   .leave-btn span     { display: none; }
   .chat-user-line     { display: none; }
-  .chat-messages      { padding: 16px 16px 8px; }
-  /* On mobile keep 75% so abs-positioned reply btn doesn't overlap text */
-  .msg-bubble         { max-width: 75%; }
+  .chat-messages      { padding: 12px 36px 8px; }  /* 36px sides on mobile */
+  .msg-bubble         { max-width: 72%; }
   .msg-img            { max-width: 200px; }
   .chat-input-bar     { padding: 8px 10px 10px; }
   .join-card          { padding: 28px 20px; }
   .reconnect-badge span { display: none; }
   .error-toast        { font-size: 12px; padding: 6px 14px; }
-  /* Hide reply btn on small screens by default, show on tap via touch media */
-  .reply-btn          { opacity: 0; }
+}
+
+@media (max-width: 480px) {
+  .chat-messages      { padding: 10px 30px 8px; }
+  .msg-bubble         { max-width: 78%; }
 }
 
 @media (max-width: 380px) {
@@ -939,22 +956,23 @@ input  { font-family: var(--ff-body); }
    REPLY SYSTEM
    ============================================================ */
 
-/* ── Outer row wrapper — position:relative so reply btn can float ── */
+/* msg-row-outer: positioning context + hover zone for reply btn */
 .msg-row-outer {
   position: relative;
   display: flex;
-  align-items: flex-end;
-  /* No gap — reply button is absolutely positioned, takes zero layout space */
-  padding: 0 2px;
+  width: 100%;
+  padding: 2px 0;
 }
 .msg-row-outer--own   { justify-content: flex-end; }
 .msg-row-outer--other { justify-content: flex-start; }
 
-/* ── Reply trigger button — absolutely positioned, floats beside bubble ── */
-/* This means it takes ZERO width in the layout — bubble gets full space */
+/* Reply button: absolutely positioned just outside the bubble.
+   Lives INSIDE msg-row-outer's bounds (padding-sides: 40px on chat-messages
+   gives it room to float without clipping) */
 .reply-btn {
   position: absolute;
-  bottom: 8px;
+  top: 50%;
+  transform: translateY(-50%);
   width: 26px;
   height: 26px;
   border-radius: 50%;
@@ -965,19 +983,24 @@ input  { font-family: var(--ff-body); }
   align-items: center;
   justify-content: center;
   cursor: pointer;
+  /* Hidden by default — shown on row hover */
   opacity: 0;
-  transition: opacity 0.15s, color 0.15s, border-color 0.15s, background 0.15s;
-  z-index: 2;
+  pointer-events: none;
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
+  z-index: 10;
   box-shadow: var(--shadow-sm);
 }
 
-/* Own messages: reply btn sits to the LEFT of the bubble */
-.reply-btn--left  { right: calc(100% + 6px); }
-/* Other messages: reply btn sits to the RIGHT of the bubble */
-.reply-btn--right { left: calc(100% + 6px); }
+/* Own messages: btn to the LEFT of bubble (bubble is on right) */
+.reply-btn--left  { right: calc(100% - 26px); }
+/* Other messages: btn to the RIGHT of bubble (bubble is on left) */
+.reply-btn--right { left: calc(100% - 26px); }
 
-/* Show on hover */
-.msg-row-outer:hover .reply-btn { opacity: 1; }
+/* Show on hover — pointer-events re-enabled so it's clickable */
+.msg-row-outer:hover .reply-btn {
+  opacity: 1;
+  pointer-events: auto;
+}
 
 .reply-btn:hover {
   color: var(--accent);
@@ -985,9 +1008,12 @@ input  { font-family: var(--ff-body); }
   background: var(--accent-dim);
 }
 
-/* Touch devices: always slightly visible */
+/* Touch: always show at low opacity */
 @media (hover: none) {
-  .reply-btn { opacity: 0.5; }
+  .reply-btn {
+    opacity: 0.45;
+    pointer-events: auto;
+  }
 }
 
 /* ── Reply preview inside a bubble ── */
@@ -1064,11 +1090,12 @@ input  { font-family: var(--ff-body); }
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 8px 12px;
-  margin-bottom: 8px;
+  padding: 7px 12px;
+  margin-bottom: 6px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--r-md);
+  /* overflow:hidden on the bar itself only — not on parent */
   overflow: hidden;
 }
 

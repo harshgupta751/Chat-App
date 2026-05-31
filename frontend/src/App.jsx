@@ -53,9 +53,9 @@ const emptyVariants = {
   visible: { opacity: 1, scale: 1,    y: 0,  transition: { ...springGentle, delay: 0.1 } },
 }
 const replyBarVariants = {
-  hidden:  { opacity: 0, y: 8, height: 0 },
-  visible: { opacity: 1, y: 0, height: 'auto', transition: springSnappy },
-  exit:    { opacity: 0, y: 4, height: 0,      transition: { ...ease, duration: 0.15 } },
+  hidden:  { opacity: 0, y: 6,  scaleY: 0.85, transformOrigin: 'bottom' },
+  visible: { opacity: 1, y: 0,  scaleY: 1,    transformOrigin: 'bottom', transition: springSnappy },
+  exit:    { opacity: 0, y: 4,  scaleY: 0.9,  transformOrigin: 'bottom', transition: { ...ease, duration: 0.12 } },
 }
 
 /* ============================================================
@@ -789,8 +789,10 @@ function App() {
                                 dangerouslySetInnerHTML={{ __html: isEmojiOnly ? msg.text : wrapEmojis(msg.text) }} />
                             )}
 
-                            <div className="msg-time">
-                              {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            <div className="msg-meta">
+                              <span className="msg-time">
+                                {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                              </span>
                             </div>
                           </motion.div>
                         </motion.div>
