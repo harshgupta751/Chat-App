@@ -200,11 +200,7 @@ function App() {
           type:    'join',
           payload: { roomId: roomIdRef.current, username: usernameRef.current, action: 'rejoin' }
         }))
-        // Request history after rejoin so messages reload on refresh
-        setTimeout(() => {
-          if (socket.readyState === WebSocket.OPEN)
-            socket.send(JSON.stringify({ type: 'history' }))
-        }, 300)
+        // History is requested inside 'session' handler — no setTimeout race
       }
     }
 
@@ -215,11 +211,16 @@ function App() {
       if (parsed.type === 'error') {
         setImageUploading(false)
         if (parsed.code === 'ROOM_NOT_FOUND') {
-          // Show inline error inside the join card — not a floating toast
           setRoomError('Room not found. Check the code and try again.')
           setJoined(false)
           clearSession()
           isRejoinRef.current = false
+        } else if (parsed.code === 'NOT_IN_ROOM' || parsed.code === 'HISTORY_ERROR') {
+          // Silent — these are internal race-condition artifacts, not user-facing errors
+          return
+        } else if (!joinedRef.current) {
+          // On join screen — suppress any other server noise
+          return
         } else {
           showError(parsed.message || 'Server error')
         }
@@ -231,11 +232,12 @@ function App() {
         setMySessionId(parsed.sessionId)
         saveSession(usernameRef.current, roomIdRef.current)
         setJoined(true)
-        // On a fresh join or "join existing": clear messages so history loads clean
-        // On rejoin (refresh/reconnect): keep existing messages until history overwrites them
         if (!isRejoinRef.current) setMessages([])
-        // After first session confirmation, future reconnects in this tab are rejoins
         isRejoinRef.current = true
+        // Request history HERE — guaranteed join is complete on server
+        // Eliminates the 300ms setTimeout race condition
+        if (wsRef.current?.readyState === WebSocket.OPEN)
+          wsRef.current.send(JSON.stringify({ type: 'history' }))
         return
       }
 
@@ -389,10 +391,7 @@ function App() {
     const id = nanoid(10)
     setRoomId(id)
     roomIdRef.current = id
-    // action:'create' — server registers this roomId as valid
     safeSend({ type: 'join', payload: { roomId: id, username: username.trim(), action: 'create' } })
-    setTimeout(() => safeSend({ type: 'history' }), 300)
-    // Optimistically enter chat — session saved when server confirms with 'session' message
     setJoined(true)
     setMessages([])
   }
@@ -400,7 +399,6 @@ function App() {
   function joinExistingRoom() {
     setRoomError(null)
     safeSend({ type: 'join', payload: { roomId: roomId.trim(), username: username.trim(), action: 'join' } })
-    setTimeout(() => safeSend({ type: 'history' }), 300)
   }
 
   function leaveRoom() {

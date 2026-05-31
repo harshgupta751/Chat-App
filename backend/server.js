@@ -298,7 +298,10 @@ wss.on('connection', async (ws, req) => {
 
     // ── HISTORY ───────────────────────────────────────────────
     else if (msg.type === 'history') {
-      if (!ws.roomId) return safeSend(ws, { type: 'error', message: 'Not in a room' })
+      // No code — silently ignore if not in a room yet (race with join)
+      if (!ws.roomId) return safeSend(ws, {
+        type: 'error', code: 'NOT_IN_ROOM', message: 'Not in a room'
+      })
       try {
         const entries = await main.xRevRange(
           `stream:${ws.roomId}`, '+', '-', { COUNT: 50 }
@@ -309,7 +312,7 @@ wss.on('connection', async (ws, req) => {
         safeSend(ws, { type: 'history', messages: history })
       } catch (err) {
         logger.error('History fetch error:', err)
-        safeSend(ws, { type: 'error', message: 'Could not fetch history' })
+        safeSend(ws, { type: 'error', code: 'HISTORY_ERROR', message: 'Could not fetch history' })
       }
     }
 

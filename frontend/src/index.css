@@ -606,6 +606,8 @@ input  { font-family: var(--ff-body); }
 .msg-row {
   display: flex;
   animation: msg-in 0.22s ease-out both;
+  /* align-items: flex-start prevents bubble from stretching to row width */
+  align-items: flex-start;
 }
 .msg-row--own   { justify-content: flex-end; }
 .msg-row--other { justify-content: flex-start; }
@@ -616,12 +618,14 @@ input  { font-family: var(--ff-body); }
 }
 
 .msg-bubble {
+  /* max-width caps long messages, width:auto lets short ones shrink */
   max-width: min(70%, 500px);
-  width: fit-content;           /* shrink-wrap to content — no forced stretching */
+  min-width: 0;
   padding: 10px 14px;
   border-radius: var(--r-lg);
-  word-break: break-word;
+  /* break-word only for genuinely long unbreakable strings (URLs etc) */
   overflow-wrap: break-word;
+  word-break: normal;
 }
 
 .msg-bubble--own {
@@ -665,6 +669,7 @@ input  { font-family: var(--ff-body); }
   text-align: right;
   font-family: var(--ff-mono);
   letter-spacing: 0.02em;
+  white-space: nowrap;   /* timestamp never wraps — prevents it from inflating bubble width */
 }
 .msg-bubble--other .msg-time { text-align: left; }
 
